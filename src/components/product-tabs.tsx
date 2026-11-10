@@ -16,7 +16,9 @@ import {
 import type { Product, Review } from "@/db/schema";
 import { cn, formatDate, initials } from "@/lib/format";
 import { Stars } from "@/components/ui";
+import { isLive, liveFetchProduct } from "@/lib/live";
 import { STORE } from "@/lib/commerce";
+import { ReviewVotes } from "@/components/review-votes";
 
 const TABS = [
   { id: "overview", label: "Details" },
@@ -38,6 +40,17 @@ export function ProductTabs({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<TabId>("overview");
+  const [liveReviews, setLiveReviews] = useState<Review[] | null>(null);
+  const shownReviews = isLive() ? (liveReviews ?? []) : reviews;
+
+  useEffect(() => {
+    if (!isLive()) return;
+    let cancelled = false;
+    void liveFetchProduct(product.slug)
+      .then((payload) => { if (!cancelled) setLiveReviews(payload.reviews); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [product.slug]);
 
   useEffect(() => {
     const openReviews = () => setTab("reviews");
@@ -50,16 +63,16 @@ export function ProductTabs({
   const [error, setError] = useState<string | null>(null);
 
   const average = useMemo(() => {
-    if (reviews.length === 0) return product.rating;
-    return reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length;
-  }, [reviews, product.rating]);
+    if (shownReviews.length === 0) return product.rating;
+    return shownReviews.reduce((sum, review) => sum + review.rating, 0) / shownReviews.length;
+  }, [shownReviews, product.rating]);
 
   const breakdown = useMemo(() => {
     return [5, 4, 3, 2, 1].map((star) => {
-      const count = reviews.filter((review) => review.rating === star).length;
-      return { star, count, percent: reviews.length ? Math.round((count / reviews.length) * 100) : 0 };
+      const count = shownReviews.filter((review) => review.rating === star).length;
+      return { star, count, percent: shownReviews.length ? Math.round((count / shownReviews.length) * 100) : 0 };
     });
-  }, [reviews]);
+  }, [shownReviews]);
 
   async function submitReview(event: React.FormEvent) {
     event.preventDefault();
@@ -80,6 +93,14 @@ export function ProductTabs({
       setStatus("done");
       setFormOpen(false);
       setForm({ author: "", location: "", rating: 5, title: "", body: "" });
+      if (isLive()) {
+        try {
+          const payload = await liveFetchProduct(product.slug);
+          setLiveReviews(payload.reviews);
+        } catch {
+          /* the list refreshes on the next visit */
+        }
+      }
       router.refresh();
       setTab("reviews");
     } catch (submitError) {
@@ -93,7 +114,7 @@ export function ProductTabs({
       <div role="tablist" aria-label="Product information" className="grid grid-cols-4 gap-1 rounded-xl border border-line bg-cream p-1">
         {TABS.map((entry) => {
           const count =
-            entry.id === "reviews" ? (product.reviewCount > 0 ? product.reviewCount : reviews.length) : null;
+            entry.id === "reviews" ? (product.reviewCount > 0 ? product.reviewCount : shownReviews.length) : null;
           return (
             <button
               key={entry.id}
@@ -191,7 +212,7 @@ export function ProductTabs({
                   <div className="pb-0.5">
                     <Stars rating={average} size={14} />
                     <p className="mt-1 text-[0.7rem] text-muted">
-                      {reviews.length} review{reviews.length === 1 ? "" : "s"}
+                      {shownReviews.length} review{shownReviews.length === 1 ? "" : "s"}
                     </p>
                   </div>
                 </div>
@@ -289,13 +310,13 @@ export function ProductTabs({
             </div>
 
             <ul className="space-y-3">
-              {reviews.length === 0 && (
+              {shownReviews.length === 0 && (
                 <li className="rounded-2xl border border-dashed border-line bg-cream px-5 py-10 text-center">
                   <p className="text-[0.9rem] font-semibold">No reviews yet</p>
                   <p className="mt-1 text-[0.8rem] text-muted">Be the first to review this product.</p>
                 </li>
               )}
-              {reviews.map((review) => (
+              {shownReviews.map((review) => (
                 <li key={review.id} className="rounded-2xl border border-line-soft bg-cream p-4">
                   <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
                     <div className="flex items-center gap-2.5">
@@ -313,11 +334,14 @@ export function ProductTabs({
                   </div>
                   <p className="mt-3 text-[0.86rem] font-semibold">{review.title}</p>
                   <p className="mt-1 text-[0.82rem] leading-relaxed text-muted">{review.body}</p>
-                  {review.verified && (
-                    <p className="mt-2.5 inline-flex items-center gap-1 rounded-full bg-volt/20 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wider text-[#4a6b1f]">
-                      <BadgeCheck size={10} /> Verified buyer
-                    </p>
-                  )}
+                  <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+                    {review.verified ? (
+                      <p className="inline-flex items-center gap-1 rounded-full bg-volt/20 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wider text-[#4a6b1f]">
+                        <BadgeCheck size={10} /> Verified buyer
+                      </p>
+                    ) : <span />}
+                    <ReviewVotes reviewId={review.id} initialCount={(review as Review & { helpfulCount?: number }).helpfulCount ?? 0} />
+                  </div>
                 </li>
               ))}
             </ul>

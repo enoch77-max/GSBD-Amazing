@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ArrowRight, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/format";
+import { api, ApiError, isLive } from "@/lib/live";
 
 export function NewsletterForm({ variant = "dark" }: { variant?: "dark" | "light" }) {
   const [email, setEmail] = useState("");
@@ -17,6 +18,16 @@ export function NewsletterForm({ variant = "dark" }: { variant?: "dark" | "light
     }
     setError(null);
     setState("loading");
+    if (isLive()) {
+      try {
+        await api("/api/newsletter", { method: "POST", body: { email } });
+        setState("done");
+      } catch (error) {
+        setError(error instanceof ApiError ? error.message : "Could not join the list. Try again.");
+        setState("idle");
+      }
+      return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 700));
     setState("done");
   }

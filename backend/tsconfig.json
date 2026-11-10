@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../src/*"]
+    }
+  },
+  "include": [
+    "./**/*.ts",
+    "../src/db/seed-data.ts",
+    "../src/lib/phone.ts",
+    "../src/lib/settings.ts",
+    "../src/lib/catalog.ts",
+    "../src/lib/commerce.ts"
+  ]
+}

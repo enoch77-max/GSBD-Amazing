@@ -19,6 +19,9 @@ import { useCart } from "@/lib/cart";
 import { STORE } from "@/lib/commerce";
 import { cn, formatBDT } from "@/lib/format";
 import { productLabel } from "@/lib/product-copy";
+import { PackBreakdown } from "@/components/pack-breakdown";
+import { calculatePack, suggestPackProducts } from "@/lib/pack-builder";
+import { readAllProducts } from "@/lib/queries";
 
 type Upsell = {
   id: number;
@@ -52,7 +55,21 @@ export function CartDrawer() {
 
   const remaining = Math.max(0, STORE.freeShippingThreshold - cart.subtotal);
   const progress = Math.min(100, Math.round((cart.subtotal / STORE.freeShippingThreshold) * 100));
-  const inBag = new Set(cart.lines.map((line) => line.slug));
+  const inBag = new Set(cart.lines.flatMap((line) => [line.slug, ...(line.packComponents ?? []).flatMap((component) => component.slug ? [component.slug] : [])]));
+  const packs = cart.lines.filter((line) => line.customPack);
+  let usefulExtras = upsell.filter((item) => !inBag.has(item.slug));
+  if (packs.length) {
+    try {
+      const products = readAllProducts();
+      const compatible = packs.map((line) => suggestPackProducts(calculatePack(line.customPack, { products }), products));
+      usefulExtras = (compatible[0] ?? [])
+        .filter((entry) => compatible.every((list) => list.some((other) => other.product.slug === entry.product.slug)))
+        .filter((entry) => !inBag.has(entry.product.slug))
+        .map(({ product }) => ({ id: product.id ?? 0, slug: product.slug, name: product.name, brand: product.brand ?? "Glowing Space", price: product.price, image: product.images[0] ?? "/images/col-circuits.jpg", stock: product.stock }));
+    } catch {
+      usefulExtras = [];
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="Shopping bag">
@@ -137,79 +154,48 @@ export function CartDrawer() {
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
               <ul className="space-y-3">
                 {cart.lines.map((line) => (
-                  <li
-                    key={line.slug}
-                    className="animate-fade-in flex gap-3 rounded-2xl border border-line-soft bg-cream p-2.5"
-                  >
-                    <Link
-                      href={`/product/${line.slug}`}
-                      onClick={cart.closeCart}
-                      className="relative size-[4.5rem] shrink-0 overflow-hidden rounded-xl bg-bone"
-                    >
-                      <Image src={line.image} alt={line.name} fill sizes="72px" className="object-cover" />
-                    </Link>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-mono text-[0.58rem] uppercase tracking-[0.14em] text-muted">
-                            {line.brand}
-                          </p>
-                          <Link
-                            href={`/product/${line.slug}`}
-                            onClick={cart.closeCart}
-                            className="mt-0.5 block text-[0.82rem] font-semibold leading-snug hover:underline"
-                          >
-                            {productLabel(line.slug, line.name)}
-                          </Link>
+                  <li key={line.slug} className="animate-fade-in rounded-2xl border border-line-soft bg-cream p-3">
+                    <div className="flex gap-3">
+                      <span className="relative size-[4.5rem] shrink-0 overflow-hidden rounded-xl bg-bone">
+                        <Image src={line.image} alt="" fill sizes="72px" className="object-cover" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[0.62rem] font-medium uppercase tracking-wider text-muted">{line.customPack ? "Made to order" : line.brand}</p>
+                            {line.customPack ? (
+                              <p className="mt-1 text-[0.85rem] font-semibold leading-snug">{line.name}</p>
+                            ) : (
+                              <Link href={`/product/${line.slug}`} onClick={cart.closeCart} className="mt-1 block text-[0.85rem] font-semibold leading-snug hover:underline">
+                                {productLabel(line.slug, line.name)}
+                              </Link>
+                            )}
+                          </div>
+                          <button type="button" onClick={() => cart.removeItem(line.slug)} className="grid size-8 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-bone hover:text-ember" aria-label={`Remove ${line.name}`}><Trash2 size={14} /></button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => cart.removeItem(line.slug)}
-                          className="grid size-8 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-bone hover:text-ember"
-                          aria-label={`Remove ${line.name}`}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <div className="flex items-center rounded-full border border-line bg-white">
-                          <button
-                            type="button"
-                            onClick={() => cart.updateQty(line.slug, line.qty - 1)}
-                            className="grid size-8 place-items-center rounded-full text-ink transition-colors hover:bg-bone disabled:opacity-40"
-                            disabled={line.qty <= 1}
-                            aria-label="Decrease quantity"
-                          >
-                            <Minus size={12} />
-                          </button>
-                          <span className="w-6 text-center font-mono text-[0.75rem]">{line.qty}</span>
-                          <button
-                            type="button"
-                            onClick={() => cart.updateQty(line.slug, line.qty + 1)}
-                            className="grid size-8 place-items-center rounded-full text-ink transition-colors hover:bg-bone"
-                            disabled={line.qty >= Math.min(line.stock, 20)}
-                            aria-label="Increase quantity"
-                          >
-                            <Plus size={12} />
-                          </button>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <div className="flex items-center rounded-full border border-line bg-white">
+                            <button type="button" onClick={() => cart.updateQty(line.slug, line.qty - 1)} className="grid size-8 place-items-center rounded-full text-ink hover:bg-bone disabled:opacity-40" disabled={line.qty <= 1} aria-label="Decrease quantity"><Minus size={12} /></button>
+                            <span className="w-6 text-center text-[0.75rem] tabular-nums">{line.qty}</span>
+                            <button type="button" onClick={() => cart.updateQty(line.slug, line.qty + 1)} className="grid size-8 place-items-center rounded-full text-ink hover:bg-bone disabled:opacity-40" disabled={line.qty >= Math.min(line.stock, 20)} aria-label="Increase quantity"><Plus size={12} /></button>
+                          </div>
+                          <p className="text-[0.9rem] font-semibold tabular-nums">{formatBDT(line.price * line.qty)}</p>
                         </div>
-                        <p className="text-[0.84rem] font-semibold">{formatBDT(line.price * line.qty)}</p>
                       </div>
                     </div>
+                    {line.customPack && <PackBreakdown line={line} onNavigate={cart.closeCart} />}
                   </li>
                 ))}
               </ul>
 
-              {upsell.filter((item) => !inBag.has(item.slug)).length > 0 && (
+              {usefulExtras.length > 0 && (
                 <div className="mt-5">
                   <div className="flex items-center justify-between">
                     <p className="eyebrow text-muted">Useful extras</p>
-                    <span className="text-[0.66rem] text-muted">Under ৳1,500</span>
+                    <span className="text-[0.66rem] text-muted">{packs.length ? "Matched to your build" : "Under ৳1,500"}</span>
                   </div>
                   <ul className="mt-2 space-y-1.5">
-                    {upsell
-                      .filter((item) => !inBag.has(item.slug))
-                      .map((item) => (
+                    {usefulExtras.map((item) => (
                         <li
                           key={item.slug}
                           className="flex items-center gap-2.5 rounded-xl border border-line-soft bg-cream p-2"

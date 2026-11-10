@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { productLabel } from "@/lib/product-copy";
 import {
   ArrowRight,
@@ -41,6 +41,12 @@ import {
   type Promo,
 } from "@/lib/commerce";
 import { cn, formatBDT } from "@/lib/format";
+import { ops, type AbandonedCart } from "@/db/ops-store";
+import { track } from "@/lib/analytics";
+import { availableGateways, createIntent, verifyPayment, type PaymentIntent } from "@/lib/payments";
+import { api, ApiError, isLive, newEventId, saveClaim } from "@/lib/live";
+import type { GatewayId } from "@/lib/settings";
+import { PackBreakdown } from "@/components/pack-breakdown";
 
 type FormState = {
   name: string;
@@ -75,6 +81,142 @@ export function CheckoutView() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
   const [copiedWallet, setCopiedWallet] = useState(false);
+  const [intent, setIntent] = useState<PaymentIntent | null>(null);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpInput, setOtpInput] = useState("");
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpHint, setOtpHint] = useState<string | null>(null);
+  const [otpProof, setOtpProof] = useState("");
+  const bagId = useRef<string | null>(null);
+  const otpCode = useRef<string>("");
+  const startedRef = useRef(false);
+
+  const settings = ops.state.settings;
+  /* `card` in the catalogue maps to the SSLCommerz gateway. */
+  const gatewayFor = (method: PaymentMethodId): GatewayId => (method === "card" ? "sslcommerz" : (method as GatewayId));
+  const enabledGateways = availableGateways(settings);
+  const otpRequired = settings.risk.requirePhoneOtp && !otpVerified;
+  const publicPayments = settings.payments as unknown as Record<string, { hosted?: boolean }>;
+  const hostedCheckout = isLive() && (gatewayFor(payment) === "sslcommerz" || (payment === "bkash" && publicPayments.bkash?.hosted === true));
+  const showTrx = (payment === "bkash" || payment === "nagad") && !hostedCheckout;
+
+  /* Fire InitiateCheckout once, with the real bag contents. */
+  useEffect(() => {
+    if (startedRef.current || !cart.hydrated || cart.lines.length === 0) return;
+    startedRef.current = true;
+    track("InitiateCheckout", {
+      value: cart.subtotal,
+      num_items: cart.itemCount,
+      content_ids: cart.lines.map((line) => line.slug),
+      contents: cart.lines.map((line) => ({ id: line.slug, quantity: line.qty, item_price: line.price })),
+    });
+  }, [cart.hydrated, cart.lines, cart.subtotal, cart.itemCount]);
+
+  /* Save the bag for recovery as soon as we have a usable phone number. */
+  useEffect(() => {
+    if (!settings.notifications.abandonedCart) return;
+    const phone = form.phone.replace(/[\s-]/g, "");
+    if (!/^01[3-9]\d{8}$/.test(phone) || cart.lines.length === 0 || submitting) return;
+    const timer = window.setTimeout(() => {
+      const existing = ops.state.carts.find((entry) => entry.phone.replace(/[\s-]/g, "") === phone && !entry.recovered);
+      saveAbandonedBag({
+        id: existing?.id ?? ops.uid(),
+        phone,
+        name: form.name,
+        updatedAt: new Date().toISOString(),
+        items: cart.lines.map((line) => ({ slug: line.slug, name: line.name, qty: line.qty, price: line.price })),
+        value: cart.subtotal,
+        recovered: false,
+        reminded: existing?.reminded ?? false,
+        attribution: ops.state.attribution ?? undefined,
+      });
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [form.phone, form.name, cart.lines, cart.subtotal, submitting, settings.notifications.abandonedCart]);
+
+  async function sendOtpLive() {
+    const phone = form.phone.replace(/[\s-]/g, "");
+    try {
+      const result = await api<{ ok: true; debugCode?: string }>("/api/otp/send", { method: "POST", body: { phone } });
+      setOtpSent(true);
+      setOtpHint(result.debugCode ? `Preview build — your code is ${result.debugCode}.` : `We sent a 6-digit code to ${phone}.`);
+    } catch (error) {
+      setOtpHint(error instanceof ApiError ? error.message : "Could not send the code. Please try again.");
+    }
+  }
+
+  async function confirmOtpLive() {
+    try {
+      const result = await api<{ verified: boolean; proof: string }>("/api/otp/verify", {
+        method: "POST",
+        body: { phone: form.phone, code: otpInput },
+      });
+      setOtpProof(result.proof);
+      setOtpVerified(true);
+      setOtpHint(null);
+      track("Lead", { content_name: "Phone verified" });
+    } catch (error) {
+      setOtpHint(error instanceof ApiError ? error.message : "That code does not match. Try again.");
+    }
+  }
+
+  function saveAbandonedBag(cart: AbandonedCart) {
+    if (!isLive()) {
+      ops.upsertCart(cart);
+      return;
+    }
+    if (!bagId.current) bagId.current = ops.uid();
+    void api("/api/carts", {
+      method: "POST",
+      body: { id: bagId.current, phone: cart.phone, name: cart.name, items: cart.items, attribution: ops.state.attribution },
+    }).catch(() => {});
+  }
+
+  function sendOtp() {
+    if (isLive()) {
+      const phone = form.phone.replace(/[\s-]/g, "");
+      if (!/^01[3-9]\d{8}$/.test(phone)) {
+        setErrors((current) => ({ ...current, phone: "Enter your mobile number first, then verify it." }));
+        return;
+      }
+      void sendOtpLive();
+      return;
+    }
+    const phone = form.phone.replace(/[\s-]/g, "");
+    if (!/^01[3-9]\d{8}$/.test(phone)) {
+      setErrors((current) => ({ ...current, phone: "Enter your mobile number first, then verify it." }));
+      return;
+    }
+    const code = String(Math.floor(100000 + Math.random() * 899999));
+    otpCode.current = code;
+    setOtpSent(true);
+    setOtpHint(
+      settings.notifications.smsProvider === "none"
+        ? `SMS is not connected in this preview — your code is ${code}.`
+        : `We sent a 6-digit code to ${phone}.`,
+    );
+    ops.pushOutbox({
+      channel: "sms", to: phone, template: "checkout_otp",
+      subject: "Verify your number",
+      body: `${code} is your ${settings.identity.name} verification code. It expires in 10 minutes.`,
+      status: settings.notifications.smsProvider === "none" ? "skipped" : "queued",
+      reason: settings.notifications.smsProvider === "none" ? "No SMS provider configured." : undefined,
+    });
+  }
+
+  function confirmOtp() {
+    if (isLive()) {
+      void confirmOtpLive();
+      return;
+    }
+    if (otpInput.trim() === otpCode.current && otpCode.current) {
+      setOtpVerified(true);
+      setOtpHint(null);
+      track("Lead", { content_name: "Phone verified" });
+    } else {
+      setOtpHint("That code does not match. Check the SMS and try again.");
+    }
+  }
 
   const subtotal = cart.subtotal;
   const baseShipping = deliveryPrice(delivery, form.district);
@@ -83,6 +225,11 @@ export function CheckoutView() {
   const shipping = freeStandard || promo?.type === "shipping" ? 0 : baseShipping;
   const total = Math.max(0, subtotal + shipping - promoOff);
   const remainingForFree = Math.max(0, STORE.freeShippingThreshold - subtotal);
+  const paymentOptions = PAYMENT_METHODS.filter(
+    (method) => enabledGateways.includes(gatewayFor(method.id)) && !(method.id === "cod" && total > settings.shipping.codMaxOrder),
+  );
+  const codBlocked = total > settings.shipping.codMaxOrder;
+
 
   const deliveryOptions = useMemo(
     () =>
@@ -108,6 +255,12 @@ export function CheckoutView() {
     }
     if (subtotal < found.minSubtotal) {
       setPromoError(`Spend ${formatBDT(found.minSubtotal)} to use ${found.code}.`);
+      setPromo(null);
+      return;
+    }
+    const phone = form.phone.replace(/[\s-]/g, "");
+    if (!isLive() && phone && ops.promoUses(found.code, phone) >= settings.risk.promoPerPhoneLimit) {
+      setPromoError(`${found.code} has already been used on this number.`);
       setPromo(null);
       return;
     }
@@ -145,8 +298,44 @@ export function CheckoutView() {
       return;
     }
     if (!validate()) return;
+    if (otpRequired) {
+      setSubmitError("Please verify your mobile number before placing the order.");
+      document.getElementById("otp-block")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     setSubmitting(true);
     try {
+      /* Prepaid orders go through the gateway before we create anything. In live mode the server owns this. */
+      const live = isLive();
+      const gateway = gatewayFor(payment);
+      let verified = false;
+      let reference = "";
+      if (!live && gateway !== "cod") {
+        const created = intent ?? (await createIntent({
+          provider: gateway,
+          amount: total,
+          orderNumber: `PRE-${Date.now().toString(36).toUpperCase()}`,
+          phone: form.phone,
+          customerName: form.name,
+        }));
+        setIntent(created);
+        reference = created.reference;
+        if (created.redirectUrl && created.mode === "live") {
+          window.location.assign(created.redirectUrl);
+          return;
+        }
+        const result = await verifyPayment({
+          provider: gateway, reference: created.reference,
+          orderNumber: created.reference, trxId: trx, amount: total,
+        });
+        if (!result.ok) {
+          setSubmitError(result.message);
+          setSubmitting(false);
+          return;
+        }
+        verified = result.status === "paid";
+      }
+      const eventId = newEventId("purchase");
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -156,16 +345,47 @@ export function CheckoutView() {
           email: form.email,
           district: form.district,
           address: form.address,
-          notes: [form.notes, trx ? `TrxID: ${trx}` : ""].filter(Boolean).join(" · "),
+          notes: form.notes,
+          trxId: trx,
+          paymentReference: reference,
+          paymentVerified: verified,
+          otpVerified,
+          otpProof: live ? otpProof : undefined,
+          eventId,
+          attribution: ops.state.attribution,
           paymentMethod: payment,
           deliveryMethod: delivery,
           promoCode: promo?.code,
-          items: cart.lines.map((line) => ({ slug: line.slug, qty: line.qty })),
+          items: cart.lines.map((line) => ({
+            slug: line.slug,
+            qty: line.qty,
+            customPack: line.customPack,
+            expectedUnitPrice: line.customPack ? line.price : undefined,
+          })),
         }),
       });
-      const data = (await response.json()) as { orderNumber?: string; error?: string };
+      const data = (await response.json()) as {
+        orderNumber?: string; error?: string; total?: number; shipping?: number; discount?: number; claimToken?: string; payment?: { redirectUrl?: string };
+        items?: Array<{ id: string; quantity: number; item_price: number }>;
+      };
       if (!response.ok || !data.orderNumber) {
         throw new Error(data.error ?? "Could not place your order.");
+      }
+      track("Purchase", {
+        order_id: data.orderNumber,
+        value: data.total ?? total,
+        shipping: data.shipping ?? shipping,
+        discount: data.discount ?? promoOff,
+        payment_method: payment,
+        num_items: cart.itemCount,
+        content_ids: cart.lines.map((line) => line.slug),
+        contents: data.items ?? cart.lines.map((line) => ({ id: line.slug, quantity: line.qty, item_price: line.price })),
+      }, eventId);
+      if (data.claimToken && data.orderNumber) saveClaim(data.orderNumber, data.claimToken);
+      if (data.payment?.redirectUrl) {
+        cart.clearCart();
+        window.location.assign(data.payment.redirectUrl);
+        return;
       }
       cart.clearCart();
       router.push(`/order/${data.orderNumber}?new=1`);
@@ -233,14 +453,13 @@ export function CheckoutView() {
           <div className="border-t border-line-soft px-4 py-3">
             <ul className="space-y-2">
               {cart.lines.map((line) => (
-                <li key={line.slug} className="flex items-center gap-2.5 text-[0.78rem]">
-                  <span className="relative size-10 shrink-0 overflow-hidden rounded-lg bg-bone">
-                    <Image src={line.image} alt="" fill sizes="40px" className="object-cover" />
-                  </span>
-                  <span className="min-w-0 flex-1 leading-snug font-medium">
-                    {productLabel(line.slug, line.name)} <span className="text-muted">×{line.qty}</span>
-                  </span>
-                  <span className="shrink-0 font-semibold">{formatBDT(line.price * line.qty)}</span>
+                <li key={line.slug} className="text-[0.78rem]">
+                  <div className="flex items-center gap-2.5">
+                    <span className="relative size-10 shrink-0 overflow-hidden rounded-lg bg-bone"><Image src={line.image} alt="" fill sizes="40px" className="object-cover" /></span>
+                    <span className="min-w-0 flex-1 font-medium leading-snug">{productLabel(line.slug, line.name)} <span className="text-muted">×{line.qty}</span></span>
+                    <span className="shrink-0 font-semibold">{formatBDT(line.price * line.qty)}</span>
+                  </div>
+                  {line.customPack && <PackBreakdown line={line} />}
                 </li>
               ))}
             </ul>
@@ -438,12 +657,16 @@ export function CheckoutView() {
               <span className="grid size-7 place-items-center rounded-full bg-ink font-mono text-[0.68rem] text-volt">3</span>
               <div>
                 <h2 className="text-[1rem] font-semibold leading-tight">Payment method</h2>
-                <p className="text-[0.72rem] text-muted">Sandbox store — no real payment is captured.</p>
+                <p className="text-[0.72rem] text-muted">
+                  {enabledGateways.some((id) => id !== "cod" && settings.payments[id].mode === "live")
+                    ? "Secure payment — you confirm on your provider's own page."
+                    : "Test mode — no real money moves. Use any ID like 9F7A2B1C4D."}
+                </p>
               </div>
             </div>
 
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {PAYMENT_METHODS.map((method) => {
+              {paymentOptions.map((method) => {
                 const selected = payment === method.id;
                 return (
                   <label
@@ -457,7 +680,11 @@ export function CheckoutView() {
                       type="radio"
                       name="payment"
                       checked={selected}
-                      onChange={() => setPayment(method.id)}
+                      onChange={() => {
+                        setPayment(method.id);
+                        setIntent(null);
+                        track("AddPaymentInfo", { payment_method: method.id, value: total });
+                      }}
                       className="sr-only"
                     />
                     <span
@@ -488,14 +715,14 @@ export function CheckoutView() {
               })}
             </div>
 
-            {(payment === "bkash" || payment === "nagad") && (
+            {showTrx && (
               <div className="animate-slide-up mt-3 rounded-xl border border-line bg-white p-3">
                 <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-bone px-3 py-2">
                   <div>
                     <p className="font-mono text-[0.58rem] uppercase tracking-[0.12em] text-muted">
-                      {payment === "bkash" ? "bKash" : "Nagad"} demo recipient
+                      {payment === "bkash" ? "bKash" : "Nagad"} {settings.payments[payment === "nagad" ? "nagad" : "bkash"].mode === "live" ? "merchant" : "test recipient"}
                     </p>
-                    <p className="font-mono text-[0.88rem] font-semibold">01712345678</p>
+                    <p className="font-mono text-[0.88rem] font-semibold">{settings.payments[payment === "nagad" ? "nagad" : "bkash"].merchantNumber || "01712345678"}</p>
                   </div>
                   <button
                     type="button"
@@ -517,7 +744,7 @@ export function CheckoutView() {
                     )}
                   </button>
                 </div>
-                <label className="label" htmlFor="trx">Transaction ID <span className="font-normal normal-case tracking-normal text-muted">(optional for sandbox)</span></label>
+                <label className="label" htmlFor="trx">Transaction ID <span className="font-normal normal-case tracking-normal text-muted">(from your confirmation SMS)</span></label>
                 <input
                   id="trx"
                   value={trx}
@@ -526,10 +753,55 @@ export function CheckoutView() {
                   className="field"
                 />
                 <p className="mt-1.5 text-[0.7rem] text-muted">
-                  Demo checkout — do not send real money.
+                  {settings.payments[payment === "nagad" ? "nagad" : "bkash"].mode === "live"
+                    ? "We verify this against the provider before marking your order paid."
+                    : "Test mode — IDs ending in 00 simulate a declined payment."}
                 </p>
               </div>
             )}
+
+            {codBlocked && (
+              <p className="mt-3 rounded-xl border border-line bg-bone px-3 py-2 text-[0.72rem] leading-relaxed text-muted">
+                Cash on delivery is capped at {formatBDT(settings.shipping.codMaxOrder)}. This order is {formatBDT(total)}, so please pay by bKash, Nagad or card.
+              </p>
+            )}
+
+            <div id="otp-block" className="mt-3 rounded-xl border border-line bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 text-[0.82rem] font-semibold">
+                    <ShieldCheck size={14} className={otpVerified ? "text-[#3d7a2f]" : "text-muted"} />
+                    {otpVerified ? "Mobile number verified" : "Verify your mobile number"}
+                  </p>
+                  <p className="mt-0.5 text-[0.7rem] leading-snug text-muted">
+                    {otpVerified
+                      ? "We can reach you about this delivery."
+                      : settings.risk.requirePhoneOtp
+                        ? "A quick code stops fake orders and keeps delivery reliable."
+                        : "Optional, but it helps the rider reach you."}
+                  </p>
+                </div>
+                {!otpVerified && !otpSent && (
+                  <button type="button" onClick={sendOtp} className="btn btn-outline btn-sm min-h-10">Send code</button>
+                )}
+                {otpVerified && <BadgeCheck size={18} className="text-[#3d7a2f]" />}
+              </div>
+              {otpSent && !otpVerified && (
+                <div className="animate-slide-up mt-2.5">
+                  <div className="flex gap-2">
+                    <input
+                      value={otpInput}
+                      onChange={(event) => setOtpInput(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                      inputMode="numeric" placeholder="6-digit code" aria-label="Verification code"
+                      className="field font-mono tracking-[0.3em]"
+                    />
+                    <button type="button" onClick={confirmOtp} disabled={otpInput.length < 6} className="btn btn-primary btn-sm min-h-11 shrink-0 px-4">Verify</button>
+                  </div>
+                  <button type="button" onClick={sendOtp} className="mt-1.5 text-[0.7rem] font-medium text-muted underline">Send a new code</button>
+                </div>
+              )}
+              {otpHint && <p className="mt-1.5 text-[0.7rem] font-medium text-[#8a5a12]">{otpHint}</p>}
+            </div>
           </section>
 
           {submitError && (
@@ -580,20 +852,19 @@ export function CheckoutView() {
 
             <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
               {cart.lines.map((line) => (
-                <li key={line.slug} className="flex items-center gap-2.5">
-                  <span className="relative size-12 shrink-0 overflow-hidden rounded-lg border border-line-soft bg-bone">
-                    <Image src={line.image} alt="" fill sizes="48px" className="object-cover" />
-                    <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-ink font-mono text-[0.55rem] text-cream">
-                      {line.qty}
+                <li key={line.slug}>
+                  <div className="flex items-center gap-2.5">
+                    <span className="relative size-12 shrink-0 overflow-hidden rounded-lg border border-line-soft bg-bone">
+                      <Image src={line.image} alt="" fill sizes="48px" className="object-cover" />
+                      <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-ink font-mono text-[0.55rem] text-cream">{line.qty}</span>
                     </span>
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[0.78rem] font-medium leading-snug">{line.name}</span>
-                    <span className="block text-[0.68rem] text-muted">
-                      {formatBDT(line.price)} × {line.qty}
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[0.78rem] font-medium leading-snug">{line.name}</span>
+                      <span className="block text-[0.68rem] text-muted">{formatBDT(line.price)} × {line.qty}</span>
                     </span>
-                  </span>
-                  <span className="text-[0.78rem] font-semibold">{formatBDT(line.price * line.qty)}</span>
+                    <span className="text-[0.78rem] font-semibold">{formatBDT(line.price * line.qty)}</span>
+                  </div>
+                  {line.customPack && <PackBreakdown line={line} />}
                 </li>
               ))}
             </ul>

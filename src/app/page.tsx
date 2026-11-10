@@ -3,10 +3,12 @@ import Link from "next/link";
 import { ArrowRight, Battery, CircuitBoard, Cpu, Flame, Headphones, Package, Quote, ShieldCheck, Sparkles, Star, Truck, Wrench, Zap } from "lucide-react";
 import { ProductCard } from "@/components/product-card";
 import { OfferCarousel, type OfferSlide } from "@/components/offer-carousel";
+import { ActivityTicker } from "@/components/activity-ticker";
 import { Stars } from "@/components/ui";
 import { STORE } from "@/lib/commerce";
 import { formatBDT, initials } from "@/lib/format";
-import { getCategories, getFeaturedProducts, getLatestReviews, getNewArrivals, getProductBySlug } from "@/lib/queries";
+import { readCategories, readFeaturedProducts, readLatestReviews, readNewArrivals, readProductBySlug } from "@/lib/queries";
+import { useStoreVersion } from "@/lib/use-store";
 
 export const dynamic = "force-dynamic";
 const categoryLabels: Record<string, { label: string; icon: typeof Battery }> = {
@@ -31,18 +33,17 @@ function ShelfTitle({ title, href, kind = "popular" }: { title: string; href: st
   );
 }
 
-export default async function HomePage() {
-  const [categories, featured, newArrivals, reviews, miniUps, customPack, cell, bms, esp32] = await Promise.all([
-    getCategories(),
-    getFeaturedProducts(12),
-    getNewArrivals(5),
-    getLatestReviews(3),
-    getProductBySlug("mini-ups-router-8800mah"),
-    getProductBySlug("custom-battery-pack-service"),
-    getProductBySlug("samsung-inr18650-30q"),
-    getProductBySlug("daly-smart-bms-4s-40a"),
-    getProductBySlug("esp32-wroom-devkit-v1"),
-  ]);
+export default function HomePage() {
+  useStoreVersion();
+  const categories = readCategories();
+  const featured = readFeaturedProducts(12);
+  const newArrivals = readNewArrivals(5);
+  const reviews = readLatestReviews(3);
+  const miniUps = readProductBySlug("mini-ups-router-8800mah");
+  const customPack = readProductBySlug("custom-battery-pack-service");
+  const cell = readProductBySlug("samsung-inr18650-30q");
+  const bms = readProductBySlug("daly-smart-bms-4s-40a");
+  const esp32 = readProductBySlug("esp32-wroom-devkit-v1");
   const bestsellers = featured.filter(product => product.slug !== "custom-battery-pack-service" && product.stock > 0).slice(0, 8);
 
   const slides: OfferSlide[] = [
@@ -128,6 +129,7 @@ export default async function HomePage() {
       </nav>
 
       <OfferCarousel slides={slides} />
+      <ActivityTicker />
 
       <div className="store-promises mb-4 flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-[0.64rem] text-muted sm:mb-5 sm:justify-center sm:gap-8 sm:text-xs">
         <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><Truck size={13} /> Delivery ৳80–130</span>

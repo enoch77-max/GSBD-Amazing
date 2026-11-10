@@ -1,1 +1,30 @@
 AGENTS.md
+
+# dependencies
+node_modules/
+
+# builds
+dist/
+.next/
+out/
+
+# local state
+qa/
+*.local
+.env
+.env.*
+!.env.example
+
+# tooling
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+
+# production runtime
+data/
+backups/
+backend/dist/
+e2e-shots/
+
+# Archives and compressed files
+*.zip

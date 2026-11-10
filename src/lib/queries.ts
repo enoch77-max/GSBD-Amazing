@@ -1,7 +1,13 @@
-import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql, type SQL } from "drizzle-orm";
-import { db } from "@/db";
-import { categories, orderItems, orders, products, reviews } from "@/db/schema";
-import { ensureSeeded } from "@/db/seed";
+/**
+ * Preview implementation of the storefront query layer.
+ *
+ * In live deployments the backend (`backend/shop.ts`) serves the same data
+ * from PostgreSQL and the storefront syncs it at boot. Every exported
+ * signature here is identical, so pages,
+ * components and route handlers are unchanged; the browser build simply reads
+ * from the seeded in-memory tables in `@/db/local-store`.
+ */
+import { store } from "@/db/local-store";
 import type { Category, Order, OrderItem, Product, Review } from "@/db/schema";
 import { PAGE_SIZE, PRICE_RANGES, type SortId } from "./catalog";
 
@@ -27,291 +33,229 @@ export type ShopResult = {
   categoryCounts: Array<{ slug: string; count: number }>;
 };
 
-async function ready() {
-  await ensureSeeded();
+const byText = (value: string) => value.toLocaleLowerCase();
+const includes = (value: string, term: string) => byText(value).includes(byText(term));
+
+function sortProducts(rows: Product[], sort: SortId = "featured"): Product[] {
+  const list = [...rows];
+  switch (sort) {
+    case "price-asc":
+      return list.sort((a, b) => a.price - b.price);
+    case "price-desc":
+      return list.sort((a, b) => b.price - a.price);
+    case "rating":
+      return list.sort((a, b) => b.rating - a.rating || b.reviewCount - a.reviewCount);
+    case "newest":
+      return list.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    default:
+      return list.sort(
+        (a, b) =>
+          Number(b.featured) - Number(a.featured) || b.rating - a.rating || a.price - b.price,
+      );
+  }
 }
 
-export async function getCategoryCounts(): Promise<Array<{ slug: string; count: number }>> {
-  try {
-    await ready();
-    return await db
-      .select({ slug: products.categorySlug, count: sql<number>`count(*)::int` })
-      .from(products)
-      .groupBy(products.categorySlug);
-  } catch (error) {
-    console.error("[queries] getCategoryCounts", error);
-    return [];
+function tally<T extends string>(values: T[], keyOrder: (a: [T, number], b: [T, number]) => number) {
+  const counts = new Map<T, number>();
+  values.forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1));
+  return Array.from(counts.entries()).sort(keyOrder);
+}
+
+/* ------------------------------------------------------------------ */
+/* Synchronous readers used by the client-rendered pages               */
+/* ------------------------------------------------------------------ */
+
+export function readCategories(): Category[] {
+  return [...store.tables.categories].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+}
+
+export function readCategoryBySlug(slug: string): Category | null {
+  return store.tables.categories.find((category) => category.slug === slug) ?? null;
+}
+
+export function readCategoryCounts(): Array<{ slug: string; count: number }> {
+  return tally(store.tables.products.map((product) => product.categorySlug), (a, b) => a[0].localeCompare(b[0])).map(
+    ([slug, count]) => ({ slug, count }),
+  );
+}
+
+export function readShopProducts(filters: ShopFilters): ShopResult {
+  const page = Math.max(1, filters.page ?? 1);
+  const { products } = store.tables;
+
+  let rows = products;
+  if (filters.category && filters.category !== "all") {
+    rows = rows.filter((product) => product.categorySlug === filters.category);
   }
+  const categoryScoped = rows;
+
+  if (filters.brand && filters.brand.length > 0) {
+    const brands = new Set(filters.brand);
+    rows = rows.filter((product) => brands.has(product.brand));
+  }
+  if (filters.inStock) rows = rows.filter((product) => product.stock > 0);
+  if (filters.q && filters.q.trim()) {
+    const term = filters.q.trim();
+    rows = rows.filter(
+      (product) =>
+        includes(product.name, term) ||
+        includes(product.shortDescription, term) ||
+        includes(product.brand, term) ||
+        includes(product.description, term),
+    );
+  }
+  if (filters.price && filters.price.length > 0) {
+    const ranges = filters.price.map((key) => PRICE_RANGES[key]).filter(Boolean);
+    if (ranges.length > 0) {
+      rows = rows.filter((product) =>
+        ranges.some(
+          (range) =>
+            (range.min === undefined || product.price >= range.min) &&
+            (range.max === undefined || product.price <= range.max),
+        ),
+      );
+    }
+  }
+
+  const sorted = sortProducts(rows, filters.sort);
+  const total = sorted.length;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+
+  const brandCounts = tally(categoryScoped.map((product) => product.brand), (a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(
+    ([brand, count]) => ({ brand, count }),
+  );
+
+  return {
+    items: sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    total,
+    page: safePage,
+    pageCount,
+    brandCounts,
+    categoryCounts: readCategoryCounts(),
+  };
+}
+
+export function readProductBySlug(slug: string): Product | null {
+  return store.tables.products.find((product) => product.slug === slug) ?? null;
+}
+
+export function readProductReviews(slug: string): Review[] {
+  return store.tables.reviews
+    .filter((review) => review.productSlug === slug)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+}
+
+export function readRelatedProducts(categorySlug: string, excludeSlug: string, limit = 4): Product[] {
+  return store.tables.products
+    .filter((product) => product.categorySlug === categorySlug && product.slug !== excludeSlug)
+    .sort((a, b) => b.rating - a.rating)
+    .slice(0, limit);
+}
+
+export function readFeaturedProducts(limit = 8): Product[] {
+  return store.tables.products
+    .filter((product) => product.featured)
+    .sort((a, b) => b.rating - a.rating || a.price - b.price)
+    .slice(0, limit);
+}
+
+export function readNewArrivals(limit = 4): Product[] {
+  return [...store.tables.products]
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, limit);
+}
+
+export function readAllProducts(): Product[] {
+  return [...store.tables.products].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function readStorefrontStats() {
+  const { products, categories, reviews } = store.tables;
+  const avg = reviews.length ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length : 0;
+  return {
+    productCount: products.length,
+    categoryCount: categories.length,
+    reviewCount: reviews.length,
+    avgRating: Math.round(avg * 10) / 10,
+  };
+}
+
+export function readLatestReviews(limit = 6): Array<Review & { productName: string }> {
+  return store.tables.reviews
+    .filter((review) => review.rating >= 5)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, limit)
+    .map((review) => ({
+      ...review,
+      productName: readProductBySlug(review.productSlug)?.name ?? "Glowing Space BD",
+    }));
+}
+
+export function readOrderByNumber(orderNumber: string): { order: Order; items: OrderItem[] } | null {
+  const order = store.tables.orders.find(
+    (entry) => entry.orderNumber === orderNumber.trim().toUpperCase(),
+  );
+  if (!order) return null;
+  return { order, items: store.tables.orderItems.filter((item) => item.orderId === order.id) };
+}
+
+/* ------------------------------------------------------------------ */
+/* Async API — identical to the server implementation                  */
+/* ------------------------------------------------------------------ */
+
+export async function getCategoryCounts() {
+  return readCategoryCounts();
 }
 
 export async function getCategories(): Promise<Category[]> {
-  try {
-    await ready();
-    return await db.select().from(categories).orderBy(asc(categories.sortOrder));
-  } catch (error) {
-    console.error("[queries] getCategories", error);
-    return [];
-  }
+  return readCategories();
 }
 
 export async function getCategoryBySlug(slug: string): Promise<Category | null> {
-  try {
-    await ready();
-    const [row] = await db.select().from(categories).where(eq(categories.slug, slug)).limit(1);
-    return row ?? null;
-  } catch (error) {
-    console.error("[queries] getCategoryBySlug", error);
-    return null;
-  }
-}
-
-function sortClause(sort: SortId = "featured") {
-  switch (sort) {
-    case "price-asc":
-      return [asc(products.price)];
-    case "price-desc":
-      return [desc(products.price)];
-    case "rating":
-      return [desc(products.rating), desc(products.reviewCount)];
-    case "newest":
-      return [desc(products.createdAt)];
-    default:
-      return [desc(products.featured), desc(products.rating), asc(products.price)];
-  }
+  return readCategoryBySlug(slug);
 }
 
 export async function getShopProducts(filters: ShopFilters): Promise<ShopResult> {
-  const page = Math.max(1, filters.page ?? 1);
-  const empty: ShopResult = {
-    items: [],
-    total: 0,
-    page,
-    pageCount: 1,
-    brandCounts: [],
-    categoryCounts: [],
-  };
-
-  try {
-    await ready();
-
-    const conditions: SQL[] = [];
-    if (filters.category && filters.category !== "all") {
-      conditions.push(eq(products.categorySlug, filters.category));
-    }
-    if (filters.brand && filters.brand.length > 0) {
-      conditions.push(inArray(products.brand, filters.brand));
-    }
-    if (filters.inStock) {
-      conditions.push(sql`${products.stock} > 0`);
-    }
-    if (filters.q) {
-      const term = `%${filters.q.trim()}%`;
-      const search = or(
-        ilike(products.name, term),
-        ilike(products.shortDescription, term),
-        ilike(products.brand, term),
-        ilike(products.description, term),
-      );
-      if (search) conditions.push(search);
-    }
-    if (filters.price && filters.price.length > 0) {
-      const rangeConditions = filters.price
-        .map((key) => PRICE_RANGES[key])
-        .filter(Boolean)
-        .map((range) =>
-          and(
-            range.min !== undefined ? gte(products.price, range.min) : undefined,
-            range.max !== undefined ? lte(products.price, range.max) : undefined,
-          ),
-        )
-        .filter((value): value is SQL => Boolean(value));
-      if (rangeConditions.length > 0) {
-        const combined = or(...rangeConditions);
-        if (combined) conditions.push(combined);
-      }
-    }
-
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
-
-    const [countRow] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(products)
-      .where(where);
-    const total = countRow?.count ?? 0;
-
-    const items = await db
-      .select()
-      .from(products)
-      .where(where)
-      .orderBy(...sortClause(filters.sort))
-      .limit(PAGE_SIZE)
-      .offset((page - 1) * PAGE_SIZE);
-
-    const brandWhere = filters.category && filters.category !== "all"
-      ? eq(products.categorySlug, filters.category)
-      : undefined;
-    const brandRows = await db
-      .select({ brand: products.brand, count: sql<number>`count(*)::int` })
-      .from(products)
-      .where(brandWhere)
-      .groupBy(products.brand)
-      .orderBy(desc(sql`count(*)`), asc(products.brand));
-
-    const categoryRows = await db
-      .select({ slug: products.categorySlug, count: sql<number>`count(*)::int` })
-      .from(products)
-      .groupBy(products.categorySlug);
-
-    return {
-      items,
-      total,
-      page,
-      pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)),
-      brandCounts: brandRows,
-      categoryCounts: categoryRows,
-    };
-  } catch (error) {
-    console.error("[queries] getShopProducts", error);
-    return empty;
-  }
+  return readShopProducts(filters);
 }
 
 export async function getProductBySlug(slug: string): Promise<Product | null> {
-  try {
-    await ready();
-    const [row] = await db.select().from(products).where(eq(products.slug, slug)).limit(1);
-    return row ?? null;
-  } catch (error) {
-    console.error("[queries] getProductBySlug", error);
-    return null;
-  }
+  return readProductBySlug(slug);
 }
 
 export async function getProductReviews(slug: string): Promise<Review[]> {
-  try {
-    await ready();
-    return await db
-      .select()
-      .from(reviews)
-      .where(eq(reviews.productSlug, slug))
-      .orderBy(desc(reviews.createdAt));
-  } catch (error) {
-    console.error("[queries] getProductReviews", error);
-    return [];
-  }
+  return readProductReviews(slug);
 }
 
-export async function getRelatedProducts(
-  categorySlug: string,
-  excludeSlug: string,
-  limit = 4,
-): Promise<Product[]> {
-  try {
-    await ready();
-    return await db
-      .select()
-      .from(products)
-      .where(and(eq(products.categorySlug, categorySlug), sql`${products.slug} <> ${excludeSlug}`))
-      .orderBy(desc(products.rating))
-      .limit(limit);
-  } catch (error) {
-    console.error("[queries] getRelatedProducts", error);
-    return [];
-  }
+export async function getRelatedProducts(categorySlug: string, excludeSlug: string, limit = 4): Promise<Product[]> {
+  return readRelatedProducts(categorySlug, excludeSlug, limit);
 }
 
 export async function getFeaturedProducts(limit = 8): Promise<Product[]> {
-  try {
-    await ready();
-    return await db
-      .select()
-      .from(products)
-      .where(eq(products.featured, true))
-      .orderBy(desc(products.rating), asc(products.price))
-      .limit(limit);
-  } catch (error) {
-    console.error("[queries] getFeaturedProducts", error);
-    return [];
-  }
+  return readFeaturedProducts(limit);
 }
 
 export async function getNewArrivals(limit = 4): Promise<Product[]> {
-  try {
-    await ready();
-    return await db
-      .select()
-      .from(products)
-      .orderBy(desc(products.createdAt))
-      .limit(limit);
-  } catch (error) {
-    console.error("[queries] getNewArrivals", error);
-    return [];
-  }
+  return readNewArrivals(limit);
 }
 
 export async function getAllProducts(): Promise<Product[]> {
-  try {
-    await ready();
-    return await db.select().from(products).orderBy(asc(products.name));
-  } catch (error) {
-    console.error("[queries] getAllProducts", error);
-    return [];
-  }
+  return readAllProducts();
 }
 
-export async function getStorefrontStats(): Promise<{
-  productCount: number;
-  categoryCount: number;
-  reviewCount: number;
-  avgRating: number;
-}> {
-  try {
-    await ready();
-    const [productRow] = await db.select({ count: sql<number>`count(*)::int` }).from(products);
-    const [categoryRow] = await db.select({ count: sql<number>`count(*)::int` }).from(categories);
-    const [reviewRow] = await db
-      .select({ count: sql<number>`count(*)::int`, avg: sql<number>`coalesce(avg(rating), 0)::float` })
-      .from(reviews);
-    return {
-      productCount: productRow?.count ?? 0,
-      categoryCount: categoryRow?.count ?? 0,
-      reviewCount: reviewRow?.count ?? 0,
-      avgRating: Math.round((reviewRow?.avg ?? 0) * 10) / 10,
-    };
-  } catch (error) {
-    console.error("[queries] getStorefrontStats", error);
-    return { productCount: 0, categoryCount: 0, reviewCount: 0, avgRating: 0 };
-  }
+export async function getStorefrontStats() {
+  return readStorefrontStats();
 }
 
-export async function getLatestReviews(limit = 6): Promise<Array<Review & { productName: string }>> {
-  try {
-    await ready();
-    const rows = await db
-      .select({
-        review: reviews,
-        productName: products.name,
-      })
-      .from(reviews)
-      .leftJoin(products, eq(products.slug, reviews.productSlug))
-      .where(gte(reviews.rating, 5))
-      .orderBy(desc(reviews.createdAt))
-      .limit(limit);
-    return rows.map((row) => ({ ...row.review, productName: row.productName ?? "Glowing Space BD" }));
-  } catch (error) {
-    console.error("[queries] getLatestReviews", error);
-    return [];
-  }
+export async function getLatestReviews(limit = 6) {
+  return readLatestReviews(limit);
 }
 
 export async function recalculateProductRating(slug: string): Promise<void> {
-  await db
-    .update(products)
-    .set({
-      rating: sql`(select coalesce(avg(rating), 0)::float from ${reviews} where ${reviews.productSlug} = ${slug})`,
-      reviewCount: sql`(select count(*)::int from ${reviews} where ${reviews.productSlug} = ${slug})`,
-    })
-    .where(eq(products.slug, slug));
+  const rows = store.tables.reviews.filter((review) => review.productSlug === slug);
+  const avg = rows.length ? rows.reduce((sum, review) => sum + review.rating, 0) / rows.length : 0;
+  store.setProductRating(slug, Math.round(avg * 10) / 10, rows.length);
 }
 
 export async function createOrder(input: {
@@ -335,36 +279,27 @@ export async function createOrder(input: {
     image: string;
     unitPrice: number;
     qty: number;
+    packSpec?: OrderItem["packSpec"];
   }>;
 }): Promise<Order> {
-  const { items, ...orderValues } = input;
-  const orderNumber = `GSBD-${Math.floor(10500 + Math.random() * 89400)}`;
-  const [created] = await db
-    .insert(orders)
-    .values({ ...orderValues, orderNumber, status: "confirmed" })
-    .returning();
-
-  if (items.length > 0) {
-    await db.insert(orderItems).values(items.map((item) => ({ ...item, orderId: created.id })));
+  const { items, ...values } = input;
+  let orderNumber = `GSBD-${Math.floor(10500 + Math.random() * 89400)}`;
+  while (store.tables.orders.some((order) => order.orderNumber === orderNumber)) {
+    orderNumber = `GSBD-${Math.floor(10500 + Math.random() * 89400)}`;
   }
-  return created;
+  return store.insertOrder(
+    {
+      ...values,
+      email: values.email ?? null,
+      notes: values.notes ?? null,
+      promoCode: values.promoCode ?? null,
+      orderNumber,
+      status: "confirmed",
+    },
+    items.map((item) => ({ ...item, packSpec: item.packSpec ?? null })),
+  );
 }
 
-export async function getOrderByNumber(
-  orderNumber: string,
-): Promise<{ order: Order; items: OrderItem[] } | null> {
-  try {
-    await ready();
-    const [order] = await db
-      .select()
-      .from(orders)
-      .where(eq(orders.orderNumber, orderNumber.trim().toUpperCase()))
-      .limit(1);
-    if (!order) return null;
-    const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
-    return { order, items };
-  } catch (error) {
-    console.error("[queries] getOrderByNumber", error);
-    return null;
-  }
+export async function getOrderByNumber(orderNumber: string) {
+  return readOrderByNumber(orderNumber);
 }

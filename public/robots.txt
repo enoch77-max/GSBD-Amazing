@@ -1,0 +1,16 @@
+# Glowing Space BD
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /checkout
+Disallow: /order/
+Disallow: /api/
+
+# Advertising crawlers need the catalogue and policy pages
+User-agent: facebookexternalhit
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+Sitemap: https://glowingspacebd.com/sitemap.xml

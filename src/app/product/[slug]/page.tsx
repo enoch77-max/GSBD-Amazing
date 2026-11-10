@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, useParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Headphones, Share2 } from "lucide-react";
 import { ProductGallery } from "@/components/product-gallery";
 import { ReviewsJump } from "@/components/reviews-jump";
@@ -10,7 +10,8 @@ import { ProductCard } from "@/components/product-card";
 import { Price, StockPill } from "@/components/ui";
 import { formatBDT } from "@/lib/format";
 import { STORE } from "@/lib/commerce";
-import { getCategories, getProductBySlug, getProductReviews, getRelatedProducts } from "@/lib/queries";
+import { getProductBySlug, readCategories, readProductBySlug, readProductReviews, readRelatedProducts } from "@/lib/queries";
+import { useStoreVersion } from "@/lib/use-store";
 
 export const dynamic = "force-dynamic";
 type PageProps = { params: Promise<{ slug: string }> };
@@ -20,11 +21,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return product ? { title: product.name, description: product.shortDescription, openGraph: { title: product.name, description: product.shortDescription, images: product.images.slice(0,1) } } : { title: "Product not found" };
 }
 
-export default async function ProductPage({ params }: PageProps) {
-  const { slug } = await params;
-  const product = await getProductBySlug(slug);
+export default function ProductPage() {
+  useStoreVersion();
+  const { slug } = useParams<{ slug: string }>();
+  const product = readProductBySlug(slug ?? "");
   if (!product) notFound();
-  const [reviews, related, categories] = await Promise.all([getProductReviews(slug), getRelatedProducts(product.categorySlug,slug,4), getCategories()]);
+  const reviews = readProductReviews(product.slug);
+  const related = readRelatedProducts(product.categorySlug, product.slug, 4);
+  const categories = readCategories();
   const category = categories.find(item => item.slug === product.categorySlug);
   const saved = product.compareAtPrice && product.compareAtPrice > product.price ? product.compareAtPrice - product.price : 0;
   const jsonLd = { "@context":"https://schema.org", "@type":"Product", name:product.name, image:product.images, description:product.shortDescription, sku:product.sku, brand:{"@type":"Brand", name:product.brand}, offers:{"@type":"Offer",priceCurrency:"BDT",price:product.price,availability:product.stock>0?"https://schema.org/InStock":"https://schema.org/OutOfStock"} };

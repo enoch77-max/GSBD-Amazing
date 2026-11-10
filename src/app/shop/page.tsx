@@ -1,9 +1,13 @@
+"use client";
+
 import type { Metadata } from "next";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Truck } from "lucide-react";
 import { ShopBrowser } from "@/components/shop-browser";
 import { isSortId, PRICE_RANGES, type SortId } from "@/lib/catalog";
-import { getCategories, getShopProducts } from "@/lib/queries";
+import { readCategories, readShopProducts } from "@/lib/queries";
+import { useStoreVersion } from "@/lib/use-store";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -11,12 +15,15 @@ export const metadata: Metadata = {
   description: "Browse cells, battery packs, BMS, UPS and DIY components. Filter by category, brand and price. Delivery across Bangladesh.",
 };
 
-type PageProps = { searchParams: Promise<{ [key: string]: string | string[] | undefined }> };
 const first = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] : value;
 const many = (value: string | string[] | undefined) => value ? Array.isArray(value) ? value : [value] : [];
 
-export default async function ShopPage({ searchParams }: PageProps) {
-  const params = await searchParams;
+export default function ShopPage() {
+  useStoreVersion();
+  const search = useSearchParams();
+  const params: Record<string, string[]> = {};
+  search.forEach((_value, key) => { params[key] = search.getAll(key); });
+
   const category = first(params.category);
   const brand = many(params.brand).filter(Boolean);
   const price = many(params.price).filter(key => key in PRICE_RANGES);
@@ -26,10 +33,8 @@ export default async function ShopPage({ searchParams }: PageProps) {
   const pageNumber = Number(first(params.page) ?? 1);
   const page = Number.isFinite(pageNumber) && pageNumber > 0 ? Math.floor(pageNumber) : 1;
   const inStock = first(params.stock) === "1";
-  const [result, categories] = await Promise.all([
-    getShopProducts({ category, brand, price, q, sort, page, inStock }),
-    getCategories(),
-  ]);
+  const result = readShopProducts({ category, brand, price, q, sort, page, inStock });
+  const categories = readCategories();
   const activeCategory = categories.find(entry => entry.slug === category);
   const facets = categories.map(entry => ({
     slug: entry.slug,

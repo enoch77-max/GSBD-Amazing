@@ -1,0 +1,16 @@
+node_modules
+dist
+backend/dist
+.git
+.gitignore
+.env
+.env.*
+backups
+data
+e2e-shots
+qa
+*.tsbuildinfo
+.DS_Store
+README.md
+PRODUCTION.md
+DEPLOY.md

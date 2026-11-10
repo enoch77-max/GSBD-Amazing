@@ -55,7 +55,7 @@ export function OfferCarousel({ slides }: { slides: OfferSlide[] }) {
     transitionTimer.current = window.setTimeout(() => {
       setOutgoing(null);
       transitionTimer.current = null;
-    }, 760);
+    }, 960);
   }, [active, count]);
 
   useEffect(() => () => {

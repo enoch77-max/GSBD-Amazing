@@ -6,6 +6,9 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { CartDrawer, CartToast } from "@/components/cart-drawer";
 import { MobileNav } from "@/components/mobile-nav";
+import { ConsentBanner } from "@/components/consent-banner";
+import { WishlistProvider } from "@/lib/wishlist";
+import "./features.css";
 
 export const metadata: Metadata = {
   title: {
@@ -32,17 +35,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-        />
-      </head>
-      <body className="min-h-screen bg-bone text-ink antialiased">
-        <CartProvider>
+    <>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap"
+      />
+      <CartProvider>
+        <WishlistProvider>
           <a href="#content" className="sr-only z-[100] rounded-lg bg-volt px-4 py-3 font-semibold text-ink focus:not-sr-only focus:fixed focus:left-3 focus:top-3">Skip to content</a>
           <SiteHeader />
           <main id="content">{children}</main>
@@ -50,8 +51,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <MobileNav />
           <CartDrawer />
           <CartToast />
-        </CartProvider>
-      </body>
-    </html>
+          <ConsentBanner />
+        </WishlistProvider>
+      </CartProvider>
+    </>
   );
 }

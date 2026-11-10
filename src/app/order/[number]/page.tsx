@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, useParams, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   CalendarClock,
@@ -20,7 +20,13 @@ import { OrderTimeline } from "@/components/order-timeline";
 import { CopyOrderButton } from "@/components/copy-button";
 import { PAYMENT_METHODS, STORE } from "@/lib/commerce";
 import { formatBDT, formatDate } from "@/lib/format";
-import { getOrderByNumber } from "@/lib/queries";
+import { readOrderByNumber } from "@/lib/queries";
+import { useEffect, useState } from "react";
+import { useStoreVersion } from "@/lib/use-store";
+import { isLive, liveFetchOrder, readClaim } from "@/lib/live";
+import type { Order, OrderItem } from "@/db/schema";
+import { PrintInvoice } from "@/components/print-invoice";
+import { PackBreakdown, packBuilderUrl } from "@/components/pack-breakdown";
 
 export const dynamic = "force-dynamic";
 
@@ -34,10 +40,31 @@ type PageProps = {
   searchParams: Promise<{ new?: string }>;
 };
 
-export default async function OrderPage({ params, searchParams }: PageProps) {
-  const { number } = await params;
-  const { new: isNew } = await searchParams;
-  const result = await getOrderByNumber(number);
+export default function OrderPage() {
+  useStoreVersion();
+  const { number } = useParams<{ number: string }>();
+  const isNew = useSearchParams().get("new") ?? undefined;
+  const [liveResult, setLiveResult] = useState<{ order: Order; items: OrderItem[] } | null | "missing">(null);
+  const [paymentFailed, setPaymentFailed] = useState(false);
+  useEffect(() => {
+    if (!isLive()) return;
+    setPaymentFailed(new URLSearchParams(window.location.search).get("payment") === "failed");
+    const token = readClaim(number ?? "");
+    void liveFetchOrder(number ?? "", token ? { token } : {})
+      .then((payload) => setLiveResult({ order: payload.order, items: payload.items }))
+      .catch(() => setLiveResult("missing"));
+  }, [number]);
+  const localResult = readOrderByNumber(number ?? "");
+  const result = isLive() ? (liveResult === "missing" ? null : liveResult) : localResult;
+  if (isLive() && liveResult === null) {
+    return (
+      <div className="shell py-20">
+        <div className="mx-auto max-w-lg rounded-2xl border border-line bg-cream p-6 text-center">
+          <p className="text-sm text-muted">Loading your order…</p>
+        </div>
+      </div>
+    );
+  }
   if (!result) notFound();
 
   const { order, items } = result;
@@ -45,10 +72,18 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
   const express = order.deliveryMethod === "express";
   const etaDays = order.district === "Dhaka" ? (express ? 0 : 2) : 4;
   const eta = new Date(order.createdAt.getTime() + etaDays * 86400000);
-  const isPaid = order.paymentMethod === "bkash" || order.paymentMethod === "nagad" || order.paymentMethod === "card";
+  const isPaid = isLive() ? (order as Order & { paymentStatus?: string }).paymentStatus === "paid" : order.paymentMethod === "bkash" || order.paymentMethod === "nagad" || order.paymentMethod === "card";
 
   return (
     <div>
+      {paymentFailed && (
+        <div className="shell pt-4">
+          <div className="rounded-2xl border border-ember/40 bg-[#fff4ec] p-4 text-[0.82rem] leading-relaxed">
+            <p className="font-semibold">Payment was not completed.</p>
+            <p className="mt-1 text-muted">No money was taken. Your order is on hold for 24 hours — message us on WhatsApp and we will send you a fresh payment link.</p>
+          </div>
+        </div>
+      )}
       <section className="relative overflow-hidden bg-ink text-cream">
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <div className="absolute -right-24 -top-24 size-[26rem] rounded-full bg-volt/[0.14] blur-[110px]" />
@@ -139,25 +174,28 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
               </span>
             </div>
             <ul className="mt-3 divide-y divide-line-soft">
-              {items.map((item) => (
-                <li key={item.id} className="flex items-center gap-3 py-2.5">
-                  <Link
-                    href={`/product/${item.slug}`}
-                    className="relative size-14 shrink-0 overflow-hidden rounded-xl border border-line-soft bg-bone"
-                  >
-                    <Image src={item.image} alt={item.name} fill sizes="56px" className="object-cover" />
-                  </Link>
-                  <div className="min-w-0 flex-1">
-                    <Link href={`/product/${item.slug}`} className="line-clamp-2 text-[0.84rem] font-medium hover:underline">
-                      {item.name}
-                    </Link>
-                    <p className="mt-0.5 text-[0.7rem] text-muted">
-                      {formatBDT(item.unitPrice)} × {item.qty}
-                    </p>
-                  </div>
-                  <p className="text-[0.84rem] font-semibold">{formatBDT(item.unitPrice * item.qty)}</p>
-                </li>
-              ))}
+              {items.map((item) => {
+                const isPack = String(item.slug).startsWith("custom-pack-");
+                const spec = item.packSpec;
+                const href = isPack
+                  ? spec?.cellId ? packBuilderUrl(spec) : "/pack-builder"
+                  : `/product/${item.slug}`;
+                return (
+                  <li key={item.id} className="py-2.5">
+                    <div className="flex items-center gap-3">
+                      <Link href={href} className="relative size-14 shrink-0 overflow-hidden rounded-xl border border-line-soft bg-bone">
+                        <Image src={item.image} alt={item.name} fill sizes="56px" className="object-cover" />
+                      </Link>
+                      <div className="min-w-0 flex-1">
+                        <Link href={href} className="line-clamp-2 text-[0.84rem] font-medium hover:underline">{item.name}</Link>
+                        <p className="mt-0.5 text-[0.7rem] text-muted">{formatBDT(item.unitPrice)} × {item.qty}</p>
+                      </div>
+                      <p className="text-[0.84rem] font-semibold">{formatBDT(item.unitPrice * item.qty)}</p>
+                    </div>
+                    {spec && <PackBreakdown editable={false} line={{ id: item.productId ?? 0, slug: item.slug, name: item.name, brand: "Glowing Space Lab", price: item.unitPrice, qty: item.qty, stock: 0, image: item.image, customPack: spec, packComponents: spec.components }} />}
+                  </li>
+                );
+              })}
             </ul>
 
             <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-[0.82rem]">
@@ -271,6 +309,7 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
             <Link href="/shop" className="mt-2 flex items-center justify-center gap-1 text-[0.76rem] font-medium text-muted hover:text-ink">
               Continue shopping <ChevronRight size={12} />
             </Link>
+            <PrintInvoice order={order} items={items} paid={isPaid} />
           </section>
         </aside>
       </div>

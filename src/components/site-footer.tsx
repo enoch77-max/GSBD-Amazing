@@ -36,9 +36,16 @@ export function SiteFooter() {
             <a href={`mailto:${STORE.email}`} className="mt-2 inline-flex min-h-8 items-center text-xs text-cream/55 hover:text-volt">{STORE.email}</a>
           </div>
         </div>
+        <nav aria-label="Policies" className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-cream/10 pt-3 text-[0.7rem]">
+          <Link href="/privacy" className="inline-flex min-h-8 items-center text-cream/60 hover:text-volt">Privacy policy</Link>
+          <Link href="/terms" className="inline-flex min-h-8 items-center text-cream/60 hover:text-volt">Terms of sale</Link>
+          <Link href="/refunds" className="inline-flex min-h-8 items-center text-cream/60 hover:text-volt">Returns &amp; refunds</Link>
+          <Link href="/support#warranty" className="inline-flex min-h-8 items-center text-cream/60 hover:text-volt">Warranty</Link>
+          <Link href="/admin" className="ml-auto inline-flex min-h-8 items-center gap-1 text-cream/40 hover:text-volt">Merchant console <ArrowUpRight size={10} /></Link>
+        </nav>
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-cream/10 py-3 text-[0.65rem] text-cream/45">
-          <p>© {new Date().getFullYear()} Glowing Space BD · Prices in BDT</p>
-          <span className="text-cream/65">bKash · Nagad · Cash on delivery</span>
+          <p>© {new Date().getFullYear()} Glowing Space BD · Prices in BDT · Trade licence TRAD/DNCC/042187/2023</p>
+          <span className="text-cream/65">bKash · Nagad · Card · Cash on delivery</span>
         </div>
       </div>
     </footer>

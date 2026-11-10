@@ -1,0 +1,37 @@
+{
+  "name": "next",
+  "version": "16.2.6",
+  "private": true,
+  "description": "Browser runtime shim for the Next.js App Router APIs used by Glowing Space BD, so the original source tree runs inside the Vite preview build.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./index.mjs"
+    },
+    "./link": {
+      "types": "./types/link.d.ts",
+      "default": "./link.mjs"
+    },
+    "./image": {
+      "types": "./types/image.d.ts",
+      "default": "./image.mjs"
+    },
+    "./navigation": {
+      "types": "./types/navigation.d.ts",
+      "default": "./navigation.mjs"
+    },
+    "./server": {
+      "types": "./types/server.d.ts",
+      "default": "./server.mjs"
+    },
+    "./headers": {
+      "types": "./types/headers.d.ts",
+      "default": "./headers.mjs"
+    },
+    "./router-core.mjs": {
+      "types": "./types/router-core.d.ts",
+      "default": "./router-core.mjs"
+    }
+  }
+}

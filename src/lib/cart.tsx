@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { normalizePackConfiguration, packSlug, type PackComponent, type PackConfiguration } from "@/lib/pack-builder";
 
 export type CartLine = {
   id: number;
@@ -20,6 +21,10 @@ export type CartLine = {
   image: string;
   qty: number;
   stock: number;
+  /** Present only for made-to-order packs. The server recalculates its price. */
+  customPack?: PackConfiguration;
+  /** Display snapshot only; the backend always rebuilds its own quote. */
+  packComponents?: PackComponent[];
 };
 
 type ToastData = { title: string; subtitle?: string; image?: string; id: number } | null;
@@ -35,6 +40,7 @@ type CartContextValue = {
   toast: ToastData;
   lastAddedSlug: string | null;
   addItem: (line: Omit<CartLine, "qty">, qty?: number) => void;
+  replaceItem: (slug: string, line: Omit<CartLine, "qty">) => void;
   removeItem: (slug: string) => void;
   updateQty: (slug: string, qty: number) => void;
   clearCart: () => void;
@@ -69,7 +75,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
           setLines(
             parsed
               .filter((line) => line && typeof line.slug === "string" && typeof line.price === "number")
-              .map((line) => ({ ...line, qty: Math.max(1, Math.min(20, Number(line.qty) || 1)) })),
+              .map((line) => {
+                if (!line.customPack) return { ...line, qty: Math.max(1, Math.min(20, Number(line.qty) || 1)) };
+                try {
+                  const config = normalizePackConfiguration(line.customPack);
+                  return { ...line, slug: packSlug(config), customPack: config, qty: Math.max(1, Math.min(20, Number(line.qty) || 1)) };
+                } catch {
+                  // Preserve old or malformed cart data so the shopper can remove it.
+                  return { ...line, qty: Math.max(1, Math.min(20, Number(line.qty) || 1)) };
+                }
+              }),
           );
         }
       }
@@ -126,6 +141,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }
         return [...current, { ...line, qty: Math.max(1, Math.min(qty, maxQtyFor(line))) }];
       });
+      void import("@/lib/analytics").then(({ track }) =>
+        track("AddToCart", {
+          content_ids: [line.slug],
+          content_name: line.name,
+          content_type: "product",
+          value: line.price * qty,
+          num_items: qty,
+          contents: [{ id: line.slug, quantity: qty, item_price: line.price }],
+        }),
+      );
       setPulse((value) => value + 1);
       setLastAddedSlug(line.slug);
       setToast({ title: `${line.name}`, subtitle: "Added to your bag", image: line.image, id: Date.now() });
@@ -137,6 +162,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const removeItem = useCallback((slug: string) => {
     setLines((current) => current.filter((line) => line.slug !== slug));
+  }, []);
+
+  const replaceItem = useCallback((slug: string, next: Omit<CartLine, "qty">) => {
+    setLines((current) => {
+      const original = current.find((line) => line.slug === slug);
+      if (!original) return current;
+      const duplicate = current.find((line) => line.slug === next.slug && line.slug !== slug);
+      if (duplicate) {
+        return current.filter((line) => line.slug !== slug).map((line) =>
+          line.slug === next.slug ? { ...line, ...next, qty: Math.min(maxQtyFor(next), line.qty + original.qty) } : line,
+        );
+      }
+      return current.map((line) => line.slug === slug ? { ...next, qty: Math.min(maxQtyFor(next), original.qty) } : line);
+    });
+    setLastAddedSlug(next.slug);
   }, []);
 
   const updateQty = useCallback((slug: string, qty: number) => {
@@ -174,6 +214,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       toast,
       lastAddedSlug,
       addItem,
+      replaceItem,
       removeItem,
       updateQty,
       clearCart,
@@ -189,6 +230,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     toast,
     lastAddedSlug,
     addItem,
+    replaceItem,
     removeItem,
     updateQty,
     clearCart,

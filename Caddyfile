@@ -1,0 +1,36 @@
+# Glowing Space BD edge proxy. Caddy fetches and renews the TLS
+# certificate automatically — no certbot, no manual renewal.
+{
+  email {$TLS_EMAIL}
+}
+
+www.{$DOMAIN} {
+  redir https://{$DOMAIN}{uri} permanent
+}
+
+{$DOMAIN} {
+  encode zstd gzip
+
+  header {
+    Strict-Transport-Security "max-age=63072000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    X-Frame-Options "DENY"
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    -Server
+  }
+
+  handle /uploads/* {
+    header Cache-Control "public, max-age=604800, immutable"
+    reverse_proxy app:3000
+  }
+
+  handle {
+    reverse_proxy app:3000
+  }
+
+  log {
+    output stdout
+    format json
+  }
+}

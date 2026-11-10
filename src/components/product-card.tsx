@@ -7,6 +7,7 @@ import type { Product } from "@/db/schema";
 import { useCart } from "@/lib/cart";
 import { cn, discountPercent, formatBDT } from "@/lib/format";
 import { brandLabel, productLabel } from "@/lib/product-copy";
+import { WishlistButton } from "@/components/wishlist-button";
 
 export function ProductCard({ product, className, priority = false, elevated = false }: {
   product: Product; className?: string; priority?: boolean; elevated?: boolean;
@@ -42,6 +43,7 @@ export function ProductCard({ product, className, priority = false, elevated = f
           {badge && <span className="product-badge rounded-full bg-volt px-2 py-1 text-[0.56rem] font-semibold leading-none text-ink sm:text-[0.62rem]">{badge}</span>}
           {off && <span className="product-badge rounded-full bg-ember px-2 py-1 text-[0.56rem] font-semibold leading-none text-white sm:text-[0.62rem]">−{off}%</span>}
         </div>
+        <WishlistButton slug={product.slug} className="absolute bottom-2 right-2 z-10 shadow-sm" label={false} />
       </div>
 
       <div className="flex flex-1 flex-col px-3 pb-2.5 pt-2 sm:px-3.5 sm:pb-3">
