@@ -41,7 +41,7 @@ export function SiteFooter() {
           <Link href="/terms" className="inline-flex min-h-8 items-center text-cream/60 hover:text-volt">Terms of sale</Link>
           <Link href="/refunds" className="inline-flex min-h-8 items-center text-cream/60 hover:text-volt">Returns &amp; refunds</Link>
           <Link href="/support#warranty" className="inline-flex min-h-8 items-center text-cream/60 hover:text-volt">Warranty</Link>
-          <Link href="/admin" className="ml-auto inline-flex min-h-8 items-center gap-1 text-cream/40 hover:text-volt">Merchant console <ArrowUpRight size={10} /></Link>
+          <Link href="/admin" className="ml-auto inline-flex min-h-8 items-center gap-1 text-cream/65 hover:text-volt">Merchant console <ArrowUpRight size={10} /></Link>
         </nav>
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-cream/10 py-3 text-[0.65rem] text-cream/45">
           <p>© {new Date().getFullYear()} Glowing Space BD · Prices in BDT · Trade licence TRAD/DNCC/042187/2023</p>

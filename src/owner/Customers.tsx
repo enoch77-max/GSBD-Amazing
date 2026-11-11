@@ -28,12 +28,12 @@ export function OwnerCustomers() {
     <>
       <div>
         <h1 className="font-display text-[1.5rem] font-bold leading-tight">Customers</h1>
-        <p className="text-[0.78rem] text-[#8aa697]">{total} customers · phone number is the identity key.</p>
+        <p className="text-[0.78rem] text-[#6e6e73]">{total} customers · phone number is the identity key.</p>
       </div>
 
       <Panel>
         <div className="relative">
-          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#5d7a6a]" />
+          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8e8e93]" />
           <input className="adm-input pl-8" placeholder="Search name or phone…" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search customers" />
         </div>
       </Panel>
@@ -50,11 +50,11 @@ export function OwnerCustomers() {
                   <tr key={customer.phone}>
                     <td>
                       <p className="font-medium">{customer.name}</p>
-                      <p className="adm-num text-[0.68rem] text-[#8aa697]">{customer.phone}</p>
+                      <p className="adm-num text-[0.68rem] text-[#6e6e73]">{customer.phone}</p>
                     </td>
                     <td className="adm-num text-right">{customer.orders} {customer.orders > 1 && <Badge tone="emerald" className="ml-1">repeat</Badge>}</td>
                     <td className="adm-num text-right font-semibold">{formatBDT(customer.spend)}</td>
-                    <td className="text-right text-[0.72rem] text-[#8aa697]">{formatDate(customer.lastOrder)}</td>
+                    <td className="text-right text-[0.72rem] text-[#6e6e73]">{formatDate(customer.lastOrder)}</td>
                     <td className="text-right">
                       <a className="adm-btn" data-size="sm" href={`https://wa.me/88${customer.phone.replace(/^0/, "")}`} target="_blank" rel="noreferrer">WhatsApp</a>
                     </td>

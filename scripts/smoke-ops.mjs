@@ -242,7 +242,7 @@ await step("bulk select and CSV export", async () => {
 });
 
 await step("inventory inline stock edit", async () => {
-  await clickText(".adm-nav-btn", /Inventory/);
+  await clickText(".adm-nav-btn", /Stock/);
   await wait(700);
   const input = await page.$("input[aria-label^='Stock for']");
   if (!input) throw new Error("no stock input");

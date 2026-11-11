@@ -23,7 +23,7 @@ function AdminShell() {
   return (
     <Suspense
       fallback={
-        <div style={{ minHeight: "60vh", display: "grid", placeItems: "center", color: "#8aa697", background: "#08120e" }}>
+        <div style={{ minHeight: "60vh", display: "grid", placeItems: "center", color: "#6e6e73", background: "#f5f5f7" }}>
           Loading console…
         </div>
       }

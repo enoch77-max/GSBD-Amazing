@@ -11,6 +11,31 @@
  * and the admin route handlers in `src/app/api/admin/**`.
  */
 import { mergeSettings, type StoreSettings } from "@/lib/settings";
+import { DEFAULT_PROMOS, replacePromos, type Promo } from "@/lib/commerce";
+import { sanitizePermissions, type AdminRole } from "@/lib/admin-access";
+
+export type AdminUser = {
+  id: string;
+  name: string;
+  email: string;
+  roleId: string;
+  /** null = the shipped preview PIN (owner only). */
+  pinHash: string | null;
+  active: boolean;
+  createdAt: string;
+  lastLoginAt: string | null;
+};
+
+export type AuditEntry = {
+  id: string;
+  at: string;
+  userId: string;
+  userName: string;
+  roleId: string;
+  action: string;
+  target: string;
+  detail?: string;
+};
 
 export type OrderStatus = "pending" | "confirmed" | "packing" | "shipped" | "delivered" | "cancelled" | "returned";
 export type PaymentStatus = "unpaid" | "authorised" | "paid" | "failed" | "refunded" | "cod_due";
@@ -88,6 +113,8 @@ export type AbandonedCart = {
   attribution?: Attribution;
 };
 
+export type AdminAuth = { pinHash: string | null; failures: number; lockedUntil: string | null; changedAt: string | null };
+
 export type OpsState = {
   settings: StoreSettings;
   orderPatches: Record<string, OrderPatch>;
@@ -99,7 +126,15 @@ export type OpsState = {
   consent: "unset" | "granted" | "denied";
   attribution: Attribution | null;
   session: { id: string; startedAt: string } | null;
-  adminSession: { at: string } | null;
+  adminSession: { at: string; userId?: string } | null;
+  adminUsers: AdminUser[];
+  /** Custom roles only; built-in roles live in code. */
+  adminRoles: AdminRole[];
+  audit: AuditEntry[];
+  /** Console-managed discount codes; null = shipped defaults. */
+  promos: Promo[] | null;
+  /** Preview console access. The PIN is stored hashed; lockout slows guessing. */
+  adminAuth: AdminAuth;
   /** Show the generated demo order book. Real orders are unaffected. */
   sampleData: boolean;
 };
@@ -107,6 +142,7 @@ export type OpsState = {
 const KEY = "gsbd.ops.v1";
 const MAX_EVENTS = 400;
 const MAX_OUTBOX = 300;
+const MAX_AUDIT = 600;
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
@@ -123,6 +159,11 @@ function emptyState(): OpsState {
     attribution: null,
     session: null,
     adminSession: null,
+    adminUsers: [],
+    adminRoles: [],
+    audit: [],
+    promos: null,
+    adminAuth: { pinHash: null, failures: 0, lockedUntil: null, changedAt: null },
     sampleData: true,
   };
 }
@@ -159,6 +200,19 @@ function hydrate(): OpsState {
       adSpend: Array.isArray(saved.adSpend) && saved.adSpend.length ? saved.adSpend : base.adSpend,
       promoUsage: saved.promoUsage ?? {},
       adminSession: saved.adminSession ?? null,
+      adminUsers: Array.isArray(saved.adminUsers)
+        ? saved.adminUsers.filter((u) => u && typeof u.id === "string" && typeof u.name === "string" && typeof u.roleId === "string")
+        : [],
+      adminRoles: Array.isArray(saved.adminRoles)
+        ? saved.adminRoles.filter((r) => r && typeof r.id === "string" && typeof r.name === "string")
+            .map((r) => ({ ...r, builtin: false, description: String(r.description ?? ""), permissions: sanitizePermissions(r.permissions) }))
+        : [],
+      audit: Array.isArray(saved.audit) ? saved.audit.slice(0, MAX_AUDIT) : [],
+      promos: Array.isArray(saved.promos) ? saved.promos.filter((p) => p && typeof p.code === "string") : null,
+      adminAuth: {
+        ...base.adminAuth,
+        ...(saved.adminAuth && typeof saved.adminAuth === "object" ? saved.adminAuth : {}),
+      },
       sampleData: saved.sampleData ?? true,
     };
   } catch (error) {
@@ -168,6 +222,7 @@ function hydrate(): OpsState {
 }
 
 let state = hydrate();
+if (state.promos) replacePromos(state.promos);
 let version = 0;
 const listeners = new Set<() => void>();
 
@@ -263,6 +318,17 @@ export const ops = {
   },
   promoUses(code: string, phone: string) {
     return (state.promoUsage[code] ?? []).filter((entry) => entry === phone).length;
+  },
+  pushAudit(entry: Omit<AuditEntry, "id" | "at">) {
+    const row: AuditEntry = { ...entry, id: uid(), at: new Date().toISOString() };
+    state = { ...state, audit: [row, ...state.audit].slice(0, MAX_AUDIT) };
+    commit();
+    return row;
+  },
+  setPromos(promos: Promo[] | null) {
+    state = { ...state, promos };
+    replacePromos(promos ?? DEFAULT_PROMOS.map((promo) => ({ ...promo })));
+    commit();
   },
   resetTrading() {
     state = { ...emptyState(), settings: state.settings };

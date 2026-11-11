@@ -50,8 +50,8 @@ export function AdminOverview({ onNavigate, onOpenOrder }: { onNavigate: (tab: s
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-display text-[1.5rem] font-bold leading-tight">Trading overview</h1>
-          <p className="text-[0.78rem] text-[#8aa697]">Live figures from orders, inventory and ad spend.</p>
+          <h1 className="adm-page-title">Trading overview</h1>
+          <p className="text-[0.78rem] text-[#6e6e73]">Live figures from orders, inventory and ad spend.</p>
         </div>
         <div className="flex gap-1.5">
           {RANGES.map((range) => (
@@ -80,18 +80,18 @@ export function AdminOverview({ onNavigate, onOpenOrder }: { onNavigate: (tab: s
           <ul className="adm-checklist">
             {issues.map((issue) => (
               <li key={issue.id}>
-                <AlertTriangle size={15} className={issue.severity === "blocker" ? "mt-0.5 shrink-0 text-[#fb7185]" : "mt-0.5 shrink-0 text-[#f59e0b]"} />
+                <AlertTriangle size={15} className={issue.severity === "blocker" ? "mt-0.5 shrink-0 text-[#e11d48]" : "mt-0.5 shrink-0 text-[#f59e0b]"} />
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-2 text-[0.83rem] font-semibold">
                     {issue.label}
                     <Badge tone={issue.severity === "blocker" ? "rose" : "amber"}>{issue.severity}</Badge>
                   </p>
-                  <p className="mt-0.5 text-[0.73rem] leading-relaxed text-[#8aa697]">{issue.detail}</p>
+                  <p className="mt-0.5 text-[0.73rem] leading-relaxed text-[#6e6e73]">{issue.detail}</p>
                 </div>
               </li>
             ))}
             {issues.length === 0 && (
-              <li><PackageCheck size={15} className="mt-0.5 shrink-0 text-[#34d399]" /><p className="text-[0.83rem]">Every launch check passed. You are clear to take live traffic.</p></li>
+              <li><PackageCheck size={15} className="mt-0.5 shrink-0 text-[#10b981]" /><p className="text-[0.83rem]">Every launch check passed. You are clear to take live traffic.</p></li>
             )}
           </ul>
         </Panel>
@@ -120,7 +120,7 @@ export function AdminOverview({ onNavigate, onOpenOrder }: { onNavigate: (tab: s
                       </td>
                       <td className="adm-num text-right">{row.orders}</td>
                       <td className="adm-num text-right">{formatBDT(row.revenue)}</td>
-                      <td className="adm-num text-right text-[#8aa697]">{row.spend ? formatBDT(row.spend) : "—"}</td>
+                      <td className="adm-num text-right text-[#6e6e73]">{row.spend ? formatBDT(row.spend) : "—"}</td>
                       <td className="adm-num text-right">
                         {row.roas ? <Badge tone={row.roas >= 2 ? "emerald" : row.roas >= 1 ? "amber" : "rose"}>{row.roas.toFixed(2)}×</Badge> : "—"}
                       </td>
@@ -161,7 +161,7 @@ export function AdminOverview({ onNavigate, onOpenOrder }: { onNavigate: (tab: s
                 <li key={product.slug} className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[0.8rem] font-medium">{product.name}</p>
-                    <p className="text-[0.68rem] text-[#8aa697]">{product.sku} · {formatBDT(product.price)}</p>
+                    <p className="text-[0.68rem] text-[#6e6e73]">{product.sku} · {formatBDT(product.price)}</p>
                   </div>
                   <Badge tone={product.stock === 0 ? "rose" : "amber"}>{product.stock === 0 ? "Out of stock" : `${product.stock} left`}</Badge>
                 </li>
@@ -184,14 +184,14 @@ export function AdminOverview({ onNavigate, onOpenOrder }: { onNavigate: (tab: s
             <tbody>
               {recent.map((order) => (
                 <tr key={order.orderNumber} className="cursor-pointer" onClick={() => onOpenOrder(order)}>
-                  <td className="adm-num text-[#c9f16b]">{order.orderNumber}</td>
+                  <td className="adm-num text-[#4d7c0f]">{order.orderNumber}</td>
                   <td>
                     <p className="font-medium">{order.customerName}</p>
-                    <p className="text-[0.68rem] text-[#8aa697]">{order.district}</p>
+                    <p className="text-[0.68rem] text-[#6e6e73]">{order.district}</p>
                   </td>
                   <td><Badge tone={order.status === "delivered" ? "emerald" : order.status === "cancelled" ? "rose" : "volt"}>{STATUS_META[order.status].label}</Badge></td>
                   <td className="adm-num text-right">{formatBDT(order.total)}</td>
-                  <td className="text-right text-[0.72rem] text-[#8aa697]">{formatDate(order.createdAt)}</td>
+                  <td className="text-right text-[0.72rem] text-[#6e6e73]">{formatDate(order.createdAt)}</td>
                 </tr>
               ))}
             </tbody>

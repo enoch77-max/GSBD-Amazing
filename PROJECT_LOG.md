@@ -15,8 +15,20 @@ GSBD-Amazing is a dual-deployment e-commerce platform for Glowing Space BD that 
 
 ## Update & Commit History
 
-### [ecb8ee5] — 2026-11-11 18:44:00 (+03:00)
-- **Archive Source**: `gsbd-amaizing-t1.zip` (Updated build)
+### [fb7dedd] — 2026-11-11 22:35:00 (+03:00)
+- **Archive Source**: `gsbd-amaizing-t1.zip` (Merchant console & team build)
+- **Type**: Merchant Console, Role-Based Access Control & Operations Suite
+- **Summary**:
+  - Implemented multi-account staff authentication with 6-digit PIN, salted hash, and brute-force rate limiting (`src/lib/admin-access.ts`).
+  - Added 6 built-in staff roles (Owner, Store Manager, Sales & Support, Warehouse, Marketing, Viewer) with 18 granular permissions and custom role duplication.
+  - Built dedicated merchant console management panels: Activity Log with CSV export (`admin-activity.tsx`), Catalogue Manager (`admin-catalogue.tsx`), Promotions & Coupon Builder (`admin-promotions.tsx`), Customer Reviews Moderation (`admin-reviews.tsx`), and Staff & Team Management (`admin-team.tsx`).
+  - Enhanced Owner operations dashboard views (`Customers.tsx`, `Growth.tsx`, `Orders.tsx`, `Overview.tsx`, `Products.tsx`, `Settings.tsx`).
+  - Added Merchant Console links in storefront header navigation and footer.
+  - Added comprehensive documentation in `docs/ADMIN_GUIDE.md` and automated E2E test suite in `scripts/admin-portal-e2e.mjs`.
+  - Preserved all existing product photos and SVG illustrations in `public/images/`.
+
+### [317fd56] — 2026-11-11 18:44:11 (+03:00)
+- **Archive Source**: `gsbd-amaizing-t1.zip` (Pack matching build)
 - **Type**: Availability Matching, BOM Stock Engine & Storefront Sidebar
 - **Summary**:
   - Added real-time Pack Availability Matching engine (`src/lib/pack-availability.ts`) checking catalogue stock against full bill of materials and local bag usage.
@@ -24,7 +36,6 @@ GSBD-Amazing is a dual-deployment e-commerce platform for Glowing Space BD that 
   - Integrated pack availability UI components (`pack-availability.tsx`, `pack-change-dialog.tsx`, `confirm-remove-dialog.tsx`).
   - Added desktop category sidebar navigation (`desktop-category-sidebar.tsx`) and enhanced storefront layouts.
   - Added documentation in `docs/PACK_MATCHING.md` and test scripts (`scripts/pack-availability-regression.mjs`, `scripts/pack-matching-e2e.mjs`).
-  - Preserved all existing product photos and media assets in `public/images/`.
 
 ### [5d29e3e] — 2026-11-11 11:50:50 (+03:00)
 - **Archive Source**: `gsbd-amaizing-t1.zip` (Initial tier)
@@ -35,7 +46,6 @@ GSBD-Amazing is a dual-deployment e-commerce platform for Glowing Space BD that 
   - Added Admin Pack AI advisor (`admin-pack-ai.tsx`) for automated pack advice and configuration assistance.
   - Replaced legacy visual component with modular `pack-planner.tsx` and `planner-boundary.tsx`.
   - Added automated navigation and pack regression test suites (`nav-scroll-e2e.cjs`, `pack-regression.mjs`).
-  - Preserved all product photo assets and restored SVG illustration graphics.
 
 ### [1f536f4] — 2026-11-10 23:57:41 (+03:00)
 - **Author**: `enoch77-max`

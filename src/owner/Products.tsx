@@ -35,7 +35,7 @@ export function OwnerProducts({ toast }: { toast: (message: string) => void }) {
     <>
       <div>
         <h1 className="font-display text-[1.5rem] font-bold leading-tight">Catalogue</h1>
-        <p className="text-[0.78rem] text-[#8aa697]">Products, categories and reviews — changes go live on the storefront immediately.</p>
+        <p className="text-[0.78rem] text-[#6e6e73]">Products, categories and reviews — changes go live on the storefront immediately.</p>
       </div>
       <div className="adm-scroll flex gap-1.5 overflow-x-auto pb-1">
         {SUBTABS.map((entry) => (
@@ -102,7 +102,7 @@ function ProductList({ toast }: { toast: (message: string) => void }) {
       <Panel>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1">
-            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#5d7a6a]" />
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8e8e93]" />
             <input className="adm-input pl-8" placeholder="Search product, SKU or brand…" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search products" />
           </div>
           <select className="adm-select w-auto" value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filter by category">
@@ -115,7 +115,7 @@ function ProductList({ toast }: { toast: (message: string) => void }) {
       </Panel>
 
       <Panel>
-        <p className="mb-2 text-[0.72rem] text-[#8aa697]">{total} product{total === 1 ? "" : "s"} · price and stock edit inline</p>
+        <p className="mb-2 text-[0.72rem] text-[#6e6e73]">{total} product{total === 1 ? "" : "s"} · price and stock edit inline</p>
         {rows.length === 0 ? (
           <Empty icon={<Boxes size={22} />} title="No products match" />
         ) : (
@@ -181,7 +181,7 @@ function Row({ product, onPatch, onEdit, onDelete }: {
     <tr>
       <td>
         <p className="font-medium">{product.name} {!product.visible && <Badge tone="rose" className="ml-1">hidden</Badge>}</p>
-        <p className="adm-num text-[0.67rem] text-[#8aa697]">{product.sku} · {product.brand} · ★ {Number(product.rating).toFixed(1)} ({product.reviewCount})</p>
+        <p className="adm-num text-[0.67rem] text-[#6e6e73]">{product.sku} · {product.brand} · ★ {Number(product.rating).toFixed(1)} ({product.reviewCount})</p>
       </td>
       <td className="text-right">
         <input
@@ -213,7 +213,7 @@ function Row({ product, onPatch, onEdit, onDelete }: {
       <td className="text-center">
         <button type="button" className="adm-icon-btn mx-auto size-7" aria-label={`${product.featured ? "Unfeature" : "Feature"} ${product.name}`} aria-pressed={product.featured}
           onClick={() => onPatch({ featured: !product.featured }, product.featured ? "Removed from bestsellers" : "Added to bestsellers")}
-          style={product.featured ? { color: "#c9f16b", borderColor: "#4a7a2a", background: "#223d16" } : undefined}>
+          style={product.featured ? { color: "#65a30d", borderColor: "#b8de6f", background: "#f1f9e0" } : undefined}>
           <Star size={12} fill={product.featured ? "currentColor" : "none"} />
         </button>
       </td>
@@ -467,10 +467,10 @@ function CategoryList({ toast }: { toast: (message: string) => void }) {
       <Panel title="Categories" subtitle={`${rows.length} total`}>
         <ul className="flex flex-col gap-2">
           {rows.map((entry) => (
-            <li key={entry.slug} className="flex items-center gap-3 rounded-xl border border-[#1d3529] bg-[#0b1712] p-2.5">
+            <li key={entry.slug} className="flex items-center gap-3 rounded-xl border border-[#e3e3e8] bg-[#f5f5f7] p-2.5">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[0.82rem] font-medium">{entry.name}</p>
-                <p className="adm-num text-[0.66rem] text-[#8aa697]">/{entry.slug} · {entry.productCount ?? 0} products</p>
+                <p className="adm-num text-[0.66rem] text-[#6e6e73]">/{entry.slug} · {entry.productCount ?? 0} products</p>
               </div>
               <Button size="sm" variant="ghost" onClick={() => {
                 setEditing(entry.slug);
@@ -530,14 +530,14 @@ function ReviewList({ toast }: { toast: (message: string) => void }) {
       ) : (
         <ul className="flex flex-col gap-2.5">
           {rows.map((review) => (
-            <li key={review.id} className="rounded-xl border border-[#1d3529] bg-[#0b1712] p-3">
+            <li key={review.id} className="rounded-xl border border-[#e3e3e8] bg-[#f5f5f7] p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[0.8rem] font-semibold">{"★".repeat(review.rating)}{"☆".repeat(5 - review.rating)}</span>
                 <span className="text-[0.8rem] font-medium">{review.title}</span>
                 {!review.visible && <Badge tone="rose">hidden</Badge>}
-                <span className="ml-auto text-[0.68rem] text-[#8aa697]">{review.author} · {review.productName ?? review.productSlug}</span>
+                <span className="ml-auto text-[0.68rem] text-[#6e6e73]">{review.author} · {review.productName ?? review.productSlug}</span>
               </div>
-              <p className="mt-1.5 text-[0.76rem] leading-relaxed text-[#b9cdbe]">{review.body}</p>
+              <p className="mt-1.5 text-[0.76rem] leading-relaxed text-[#3a3a3c]">{review.body}</p>
               <div className="mt-2 flex gap-1.5">
                 <Button size="sm" variant="ghost" onClick={() => void act(review.id, api(`/api/admin/reviews/${review.id}`, { method: "PATCH", body: { visible: !review.visible } }), review.visible ? "Review hidden" : "Review visible")}>
                   {review.visible ? "Hide" : "Show"}

@@ -114,8 +114,8 @@ export function AdminPackAI({ toast }: { toast: (message: string) => void }) {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-[1.5rem] font-bold leading-tight">Pack AI · smart recommendations</h1>
-          <p className="text-[0.78rem] text-[#8aa697]">
+          <h1 className="adm-page-title">Pack AI · smart recommendations</h1>
+          <p className="text-[0.78rem] text-[#6e6e73]">
             Control the &ldquo;recommended&rdquo; capsule the pack builder puts on its best suggested part — e.g. an active balancer for longer backup.
           </p>
         </div>
@@ -163,11 +163,11 @@ export function AdminPackAI({ toast }: { toast: (message: string) => void }) {
           <div className="flex flex-col gap-3">
             <Field label="Headline"><input className="adm-input" value={draft.headline} onChange={(event) => edit({ headline: event.target.value })} /></Field>
             <Field label="Explanation"><textarea className="adm-input min-h-[6rem] resize-y" value={draft.detail} onChange={(event) => edit({ detail: event.target.value })} /></Field>
-            <div className="rounded-lg border border-[#274a37] bg-[#0e2119] p-3">
-              <p className="text-[0.64rem] font-bold uppercase tracking-[.12em] text-[#8aa697]">Customer-facing preview</p>
-              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#c9f16b] px-2.5 py-1 text-[0.66rem] font-bold text-[#12291c]"><Sparkles size={11} /> {draft.badgeLabel}</p>
-              <p className="mt-2 font-display text-[0.95rem] font-bold text-[#e9f5df]">{draft.headline.replace("{gain}", "3.5").replace("{life}", "12").replace("{minutes}", "9").replace("{series}", "4")}</p>
-              <p className="mt-1 text-[0.74rem] leading-relaxed text-[#9db7a6]">{draft.detail.replace("{series}", "4").replace("{gain}", "3.5").replace("{life}", "12")}</p>
+            <div className="rounded-lg border border-[#e3e3e8] bg-[#0e2119] p-3">
+              <p className="text-[0.64rem] font-bold uppercase tracking-[.12em] text-[#6e6e73]">Customer-facing preview</p>
+              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#c8ff38] px-2.5 py-1 text-[0.66rem] font-bold text-[#12291c]"><Sparkles size={11} /> {draft.badgeLabel}</p>
+              <p className="mt-2 font-display text-[0.95rem] font-bold text-[#1d1d1f]">{draft.headline.replace("{gain}", "3.5").replace("{life}", "12").replace("{minutes}", "9").replace("{series}", "4")}</p>
+              <p className="mt-1 text-[0.74rem] leading-relaxed text-[#6e6e73]">{draft.detail.replace("{series}", "4").replace("{gain}", "3.5").replace("{life}", "12")}</p>
             </div>
           </div>
         </Panel>
@@ -221,29 +221,29 @@ export function AdminPackAI({ toast }: { toast: (message: string) => void }) {
       <Panel title="Live simulation" subtitle="The capsule shoppers see on the Optional add-ons list for typical builds — scores update as you edit the rules">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {previews.map((scenario) => (
-            <div key={scenario.label} className="rounded-xl border border-[#1d3529] bg-[#0b1b14] p-3">
+            <div key={scenario.label} className="rounded-xl border border-[#e3e3e8] bg-[#0b1b14] p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 text-[0.8rem] font-semibold text-[#e9f5df]"><BatteryCharging size={13} /> {scenario.label}</span>
+                <span className="inline-flex items-center gap-1.5 text-[0.8rem] font-semibold text-[#1d1d1f]"><BatteryCharging size={13} /> {scenario.label}</span>
                 <Badge tone={scenario.active ? "emerald" : "neutral"}>{scenario.active ? "Capsule shown" : "No capsule"}</Badge>
               </div>
-              <p className="mt-1 text-[0.7rem] text-[#8aa697]">{scenario.detail}</p>
+              <p className="mt-1 text-[0.7rem] text-[#6e6e73]">{scenario.detail}</p>
               {scenario.top ? (
                 <>
-                  <div className="mt-3 rounded-lg border border-[#274a37] bg-[#10281c] p-2.5">
-                    <p className="text-[0.62rem] font-bold uppercase tracking-[.1em] text-[#c9f16b]">Top ranked part</p>
-                    <p className="mt-1 text-[0.84rem] font-semibold text-[#f0f8e9]">{scenario.top.product.name}</p>
-                    <p className="mt-1 text-[0.7rem] text-[#9db7a6]">{scenario.top.impact}</p>
+                  <div className="mt-3 rounded-lg border border-[#e3e3e8] bg-[#10281c] p-2.5">
+                    <p className="text-[0.62rem] font-bold uppercase tracking-[.1em] text-[#4d7c0f]">Top ranked part</p>
+                    <p className="mt-1 text-[0.84rem] font-semibold text-[#1d1d1f]">{scenario.top.product.name}</p>
+                    <p className="mt-1 text-[0.7rem] text-[#6e6e73]">{scenario.top.impact}</p>
                   </div>
-                  <div className="mt-2 flex items-center justify-between text-[0.7rem] text-[#8aa697]">
-                    <span>Score <strong className="text-[#e9f5df]">{scenario.top.score}/100</strong></span>
+                  <div className="mt-2 flex items-center justify-between text-[0.7rem] text-[#6e6e73]">
+                    <span>Score <strong className="text-[#1d1d1f]">{scenario.top.score}/100</strong></span>
                     <span>Backup ~{scenario.intelligence?.backupMinutes ?? 0} min</span>
                   </div>
                   {scenario.intelligence && !scenario.intelligence.eligible && (
-                    <p className="mt-1.5 text-[0.68rem] text-[#fcd34d]">{scenario.intelligence.eligibilityNote}</p>
+                    <p className="mt-1.5 text-[0.68rem] text-[#92400e]">{scenario.intelligence.eligibilityNote}</p>
                   )}
                 </>
               ) : (
-                <p className="mt-3 text-[0.72rem] text-[#8aa697]">No compatible suggestions for this build.</p>
+                <p className="mt-3 text-[0.72rem] text-[#6e6e73]">No compatible suggestions for this build.</p>
               )}
             </div>
           ))}
@@ -251,11 +251,11 @@ export function AdminPackAI({ toast }: { toast: (message: string) => void }) {
       </Panel>
 
       <Panel title="How the smart score works" subtitle="Every number comes from the pack physics — no guesses">
-        <div className="grid gap-2 text-[0.75rem] leading-relaxed text-[#9db7a6] sm:grid-cols-2">
-          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#c9f16b]" /> Mismatch: the weakest of S groups sits ~σ·z(S) below average (σ = cell spread ÷ √P, z from order statistics). Passive BMS boards can&apos;t recover it during use; a 5A active balancer can.</p>
-          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#c9f16b]" /> Drift: monthly self-discharge spread is compared with the BMS&apos;s real balance current (35–60mA passive, 2A JK active) — large LiFePO4 banks drift more than a passive board can correct.</p>
-          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#c9f16b]" /> Lifespan: the weakest group is over-discharged on every cycle; removing that stress raises cycle life — shown as +{"{life}"}%.</p>
-          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#c9f16b]" /> Packs whose BMS already balances actively are scored down automatically, so the capsule only appears where it genuinely helps.</p>
+        <div className="grid gap-2 text-[0.75rem] leading-relaxed text-[#6e6e73] sm:grid-cols-2">
+          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#4d7c0f]" /> Mismatch: the weakest of S groups sits ~σ·z(S) below average (σ = cell spread ÷ √P, z from order statistics). Passive BMS boards can&apos;t recover it during use; a 5A active balancer can.</p>
+          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#4d7c0f]" /> Drift: monthly self-discharge spread is compared with the BMS&apos;s real balance current (35–60mA passive, 2A JK active) — large LiFePO4 banks drift more than a passive board can correct.</p>
+          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#4d7c0f]" /> Lifespan: the weakest group is over-discharged on every cycle; removing that stress raises cycle life — shown as +{"{life}"}%.</p>
+          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#4d7c0f]" /> Packs whose BMS already balances actively are scored down automatically, so the capsule only appears where it genuinely helps.</p>
         </div>
       </Panel>
     </div>

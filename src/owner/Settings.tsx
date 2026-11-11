@@ -52,11 +52,11 @@ export function OwnerSettings({ session, toast }: { session: { email: string; ro
   if (denied || session.role !== "owner") {
     return (
       <Panel title="Settings">
-        <p className="flex items-center gap-2 text-[0.82rem] text-[#fcd34d]"><AlertTriangle size={15} /> Only the store owner can view or change settings.</p>
+        <p className="flex items-center gap-2 text-[0.82rem] text-[#92400e]"><AlertTriangle size={15} /> Only the store owner can view or change settings.</p>
       </Panel>
     );
   }
-  if (!draft) return <Panel title="Settings" subtitle="Loading…"><p className="text-[0.78rem] text-[#8aa697]">Loading settings…</p></Panel>;
+  if (!draft) return <Panel title="Settings" subtitle="Loading…"><p className="text-[0.78rem] text-[#6e6e73]">Loading settings…</p></Panel>;
 
   const edit = <K extends keyof StoreSettings>(key: K, patch: Partial<StoreSettings[K]>) => {
     setDraft((current) => (current ? { ...current, [key]: { ...current[key], ...patch } } : current));
@@ -88,7 +88,7 @@ export function OwnerSettings({ session, toast }: { session: { email: string; ro
     <>
       <div>
         <h1 className="font-display text-[1.5rem] font-bold leading-tight">Settings</h1>
-        <p className="text-[0.78rem] text-[#8aa697]">Everything that controls live trading. Each section saves separately.</p>
+        <p className="text-[0.78rem] text-[#6e6e73]">Everything that controls live trading. Each section saves separately.</p>
       </div>
 
       <div className="adm-scroll flex gap-1.5 overflow-x-auto pb-1">
@@ -127,7 +127,7 @@ export function OwnerSettings({ session, toast }: { session: { email: string; ro
                 ? gateway.enabled && draft.shipping.codEnabled
                 : gateway.enabled && (gateway.mode === "sandbox" || Boolean(gateway.publicKey && gateway.secretKey));
               return (
-                <div key={id} className="rounded-xl border border-[#1d3529] bg-[#0b1712] p-3">
+                <div key={id} className="rounded-xl border border-[#e3e3e8] bg-[#f5f5f7] p-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[0.86rem] font-semibold">{GATEWAY_LABEL[id]}</span>
                     <Badge tone={ready ? "emerald" : "rose"}>{ready ? (gateway.mode === "live" ? "live" : "sandbox") : "disabled"}</Badge>
@@ -142,7 +142,7 @@ export function OwnerSettings({ session, toast }: { session: { email: string; ro
                     </div>
                   </div>
                   {id === "cod" ? (
-                    <p className="mt-2 text-[0.74rem] leading-relaxed text-[#8aa697]">
+                    <p className="mt-2 text-[0.74rem] leading-relaxed text-[#6e6e73]">
                       Cash collected by the rider. Ceiling ৳{draft.shipping.codMaxOrder.toLocaleString("en-IN")}; advance of ৳{draft.shipping.codAdvanceAmount} above ৳{draft.shipping.codAdvanceAbove.toLocaleString("en-IN")}.
                     </p>
                   ) : (
@@ -153,7 +153,7 @@ export function OwnerSettings({ session, toast }: { session: { email: string; ro
                       <Field label={id === "sslcommerz" ? "Store password" : "App secret"}>
                         <div className="relative">
                           <input className="adm-input pr-9" type={reveal ? "text" : "password"} value={gateway.secretKey} onChange={(e) => editGateway(id, { secretKey: e.target.value })} />
-                          <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8aa697] hover:text-[#c9f16b]" onClick={() => setReveal((value) => !value)} aria-label={reveal ? "Hide secrets" : "Show secrets"}>
+                          <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6e6e73] hover:text-[#4d7c0f]" onClick={() => setReveal((value) => !value)} aria-label={reveal ? "Hide secrets" : "Show secrets"}>
                             {reveal ? <EyeOff size={13} /> : <Eye size={13} />}
                           </button>
                         </div>
@@ -174,7 +174,7 @@ export function OwnerSettings({ session, toast }: { session: { email: string; ro
                     </div>
                   )}
                   {id === "bkash" && (
-                    <p className="mt-2 text-[0.72rem] text-[#8aa697]">With API credentials set, live bKash pays on a hosted page. Without them, customers send money manually and you confirm each TrxID.</p>
+                    <p className="mt-2 text-[0.72rem] text-[#6e6e73]">With API credentials set, live bKash pays on a hosted page. Without them, customers send money manually and you confirm each TrxID.</p>
                   )}
                 </div>
               );
@@ -314,9 +314,9 @@ function Blocklist({ toast }: { toast: (message: string) => void }) {
       </div>
       <ul className="mt-3 flex flex-col gap-2">
         {rows.map((entry) => (
-          <li key={entry.phone} className="flex items-center gap-3 rounded-xl border border-[#1d3529] bg-[#0b1712] p-2.5">
+          <li key={entry.phone} className="flex items-center gap-3 rounded-xl border border-[#e3e3e8] bg-[#f5f5f7] p-2.5">
             <span className="adm-num text-[0.82rem]">{entry.phone}</span>
-            <span className="min-w-0 flex-1 truncate text-[0.74rem] text-[#8aa697]">{entry.reason || "No reason given"}</span>
+            <span className="min-w-0 flex-1 truncate text-[0.74rem] text-[#6e6e73]">{entry.reason || "No reason given"}</span>
             <Button size="sm" variant="ghost" onClick={() => {
               void api(`/api/admin/blocklist/${encodeURIComponent(entry.phone)}`, { method: "DELETE" })
                 .then(() => { toast("Number unblocked"); return load(); })
@@ -350,10 +350,10 @@ function Team({ toast }: { toast: (message: string) => void }) {
       <Panel title="Team accounts" subtitle="Staff can fulfil orders and edit the catalogue. Only owners see settings.">
         <ul className="flex flex-col gap-2">
           {rows.map((user) => (
-            <li key={user.id} className="flex items-center gap-2 rounded-xl border border-[#1d3529] bg-[#0b1712] p-2.5">
+            <li key={user.id} className="flex items-center gap-2 rounded-xl border border-[#e3e3e8] bg-[#f5f5f7] p-2.5">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[0.82rem] font-medium">{user.email}</p>
-                <p className="text-[0.68rem] text-[#8aa697]">{user.role}{user.active ? "" : " · deactivated"}</p>
+                <p className="text-[0.68rem] text-[#6e6e73]">{user.role}{user.active ? "" : " · deactivated"}</p>
               </div>
               <select
                 className="adm-select w-auto" value={user.role} aria-label={`Role for ${user.email}`}
@@ -421,7 +421,7 @@ function AuditLog() {
             <tbody>
               {rows.map((entry) => (
                 <tr key={entry.id}>
-                  <td className="text-[0.72rem] text-[#8aa697]">{new Date(entry.createdAt).toLocaleString("en-GB")}</td>
+                  <td className="text-[0.72rem] text-[#6e6e73]">{new Date(entry.createdAt).toLocaleString("en-GB")}</td>
                   <td className="text-[0.76rem]">{entry.actor}</td>
                   <td><Badge>{entry.action}</Badge></td>
                   <td className="adm-num text-[0.72rem]">{entry.target ?? "—"}</td>

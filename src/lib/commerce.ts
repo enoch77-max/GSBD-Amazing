@@ -77,7 +77,15 @@ export type Promo = {
   value: number;
   minSubtotal: number;
   maxDiscount?: number;
+  /** Console-managed controls; absent means "always on, unlimited". */
+  active?: boolean;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  maxUses?: number | null;
 };
+
+/** Built-in codes; the merchant console can replace this list at runtime. */
+export const DEFAULT_PROMOS: Promo[] = [];
 
 export const PROMOS: Promo[] = [
   {
@@ -104,8 +112,23 @@ export const PROMOS: Promo[] = [
   },
 ];
 
+DEFAULT_PROMOS.push(...PROMOS.map((promo) => ({ ...promo })));
+
+export function promoLive(promo: Promo, now = Date.now()): boolean {
+  if (promo.active === false) return false;
+  if (promo.startsAt && new Date(promo.startsAt).getTime() > now) return false;
+  if (promo.endsAt && new Date(promo.endsAt).getTime() < now) return false;
+  return true;
+}
+
 export function findPromo(code: string): Promo | undefined {
-  return PROMOS.find((promo) => promo.code === code.trim().toUpperCase());
+  return PROMOS.find((promo) => promo.code === code.trim().toUpperCase() && promoLive(promo));
+}
+
+/** Swap the active promo list in place (shared by live sync and the console). */
+export function replacePromos(next: Promo[]) {
+  PROMOS.length = 0;
+  for (const promo of next) PROMOS.push(promo);
 }
 
 export function promoDiscount(promo: Promo | undefined, subtotal: number): number {

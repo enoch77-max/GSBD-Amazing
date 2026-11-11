@@ -51,7 +51,7 @@ export function Badge({ children, tone = "neutral", className }: { children: Rea
 }
 
 export function Button({ children, variant = "default", size = "md", className, ...rest }: {
-  children: ReactNode; variant?: "default" | "primary" | "ghost" | "danger"; size?: "sm" | "md";
+  children: ReactNode; variant?: "default" | "primary" | "accent" | "ghost" | "danger"; size?: "sm" | "md";
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button type="button" className={cn("adm-btn", className)} data-variant={variant} data-size={size} {...rest}>
@@ -94,6 +94,28 @@ export function Toggle({ checked, onChange, label, hint }: { checked: boolean; o
   );
 }
 
+/** Shown when the signed-in role can view a section but not change it. */
+export function ReadOnlyNote({ children }: { children?: ReactNode }) {
+  return (
+    <p className="adm-readonly-note" role="note">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+      {children ?? "View only — your role cannot change this section."}
+    </p>
+  );
+}
+
+export function PageHead({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
+  return (
+    <div className="adm-page-head">
+      <div className="min-w-0">
+        <h1 className="adm-page-title">{title}</h1>
+        {subtitle && <p className="adm-page-sub">{subtitle}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
 export function Empty({ icon, title, body }: { icon?: ReactNode; title: string; body?: string }) {
   return (
     <div className="adm-empty">
@@ -109,20 +131,35 @@ export function Drawer({ open, onClose, title, subtitle, children, footer, wide 
   open: boolean; onClose: () => void; title: string; subtitle?: string; children: ReactNode; footer?: ReactNode; wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  /* Hold the latest close handler without re-running the open effect: callers
+     often pass a fresh closure each render, and re-running would steal focus
+     from the field being typed into. */
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const previous = document.body.style.overflow;
+    const previousFocus = document.activeElement as HTMLElement | null;
     document.body.style.overflow = "hidden";
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") closeRef.current();
+      if (event.key !== "Tab" || !ref.current) return;
+      const focusable = [...ref.current.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])")]
+        .filter((element) => element.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === ref.current)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
     window.addEventListener("keydown", onKey);
     ref.current?.focus();
     return () => {
       document.body.style.overflow = previous;
       window.removeEventListener("keydown", onKey);
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return (
@@ -169,7 +206,7 @@ export function RevenueChart({ data, height = 190 }: { data: SeriesPoint[]; heig
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ height }} role="img" aria-label="Revenue and ad spend over time">
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#c9f16b" stopOpacity="0.42" />
+            <stop offset="0%" stopColor="#65a30d" stopOpacity="0.42" />
             <stop offset="60%" stopColor="#4ea87c" stopOpacity="0.14" />
             <stop offset="100%" stopColor="#0f2b21" stopOpacity="0" />
           </linearGradient>
@@ -178,12 +215,12 @@ export function RevenueChart({ data, height = 190 }: { data: SeriesPoint[]; heig
           <line key={fraction} x1={pad.left} x2={width - pad.right} y1={pad.top + innerH * (1 - fraction)} y2={pad.top + innerH * (1 - fraction)} stroke="#1e3a2e" strokeWidth="1" strokeDasharray="3 5" />
         ))}
         <path d={area} fill={`url(#${gradientId})`} />
-        <path d={line("revenue")} fill="none" stroke="#c9f16b" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={line("revenue")} fill="none" stroke="#65a30d" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
         <path d={line("spend")} fill="none" stroke="#f59e0b" strokeWidth="1.75" strokeDasharray="5 4" strokeLinecap="round" />
         {data.map((point, index) => (
           <g key={point.label} className="adm-chart-hit">
             <rect x={x(index) - innerW / (data.length * 2)} y={pad.top} width={innerW / data.length} height={innerH} fill="transparent" />
-            <circle cx={x(index)} cy={y(point.revenue)} r="3" fill="#0b1712" stroke="#c9f16b" strokeWidth="2" className="adm-chart-dot" />
+            <circle cx={x(index)} cy={y(point.revenue)} r="3" fill="#f5f5f7" stroke="#65a30d" strokeWidth="2" className="adm-chart-dot" />
             <title>{`${point.label} · revenue ৳${point.revenue.toLocaleString("en-IN")} · spend ৳${point.spend.toLocaleString("en-IN")} · ${point.orders} orders`}</title>
           </g>
         ))}
@@ -194,7 +231,7 @@ export function RevenueChart({ data, height = 190 }: { data: SeriesPoint[]; heig
         )}
       </svg>
       <div className="adm-legend">
-        <span><i style={{ background: "#c9f16b" }} /> Revenue</span>
+        <span><i style={{ background: "#65a30d" }} /> Revenue</span>
         <span><i style={{ background: "#f59e0b" }} /> Ad spend</span>
       </div>
     </div>
@@ -223,7 +260,7 @@ export function BarList({ rows, format }: { rows: Array<{ label: string; value: 
 }
 
 /** Six separable hues, each paired with a direct label wherever it is used. */
-export const CHART_HUES = ["#c9f16b", "#38bdf8", "#f59e0b", "#f472b6", "#34d399", "#a78bfa"];
+export const CHART_HUES = ["#65a30d", "#0a84ff", "#f59e0b", "#ec4899", "#10b981", "#8b5cf6"];
 
 export function Donut({ slices, total, caption }: { slices: Array<{ label: string; value: number; color: string }>; total: string; caption: string }) {
   const sum = slices.reduce((acc, slice) => acc + slice.value, 0) || 1;

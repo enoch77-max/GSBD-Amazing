@@ -23,8 +23,8 @@ export function AdminGrowth({ toast }: { toast: (message: string) => void }) {
   return (
     <>
       <div>
-        <h1 className="font-display text-[1.5rem] font-bold leading-tight">Growth</h1>
-        <p className="text-[0.78rem] text-[#8aa697]">Ad spend, attribution, recovery and measurement in one place.</p>
+        <h1 className="adm-page-title">Growth</h1>
+        <p className="text-[0.78rem] text-[#6e6e73]">Ad spend, attribution, recovery and measurement in one place.</p>
       </div>
       <div className="adm-scroll flex gap-1.5 overflow-x-auto pb-1">
         {SUBTABS.map((entry) => (
@@ -99,8 +99,8 @@ function Attribution({ toast }: { toast: (message: string) => void }) {
                     <td><span className="inline-flex items-center gap-2"><i className="size-2 rounded-full" style={{ background: CHART_HUES[index % CHART_HUES.length] }} /><span className="capitalize">{row.channel}</span></span></td>
                     <td className="adm-num text-right">{row.orders}</td>
                     <td className="adm-num text-right">{formatBDT(row.revenue)}</td>
-                    <td className="adm-num text-right text-[#8aa697]">{row.spend ? formatBDT(row.spend) : "—"}</td>
-                    <td className="adm-num text-right text-[#8aa697]">{row.orders && row.spend ? formatBDT(Math.round(row.spend / row.orders)) : "—"}</td>
+                    <td className="adm-num text-right text-[#6e6e73]">{row.spend ? formatBDT(row.spend) : "—"}</td>
+                    <td className="adm-num text-right text-[#6e6e73]">{row.orders && row.spend ? formatBDT(Math.round(row.spend / row.orders)) : "—"}</td>
                     <td className="adm-num text-right">{row.roas ? <Badge tone={row.roas >= 2 ? "emerald" : row.roas >= 1 ? "amber" : "rose"}>{row.roas.toFixed(2)}×</Badge> : "—"}</td>
                   </tr>
                 ))}
@@ -161,7 +161,7 @@ function Attribution({ toast }: { toast: (message: string) => void }) {
                 <input className="adm-input" value={content} onChange={(event) => setContent(event.target.value)} />
               </label>
             </div>
-            <p className="adm-mono mt-2.5 break-all rounded-lg border border-[#1d3529] bg-[#0b1712] p-2.5 text-[0.68rem] leading-relaxed text-[#a5e0fb]">{link}</p>
+            <p className="adm-mono mt-2.5 break-all rounded-lg border border-[#e3e3e8] bg-[#f5f5f7] p-2.5 text-[0.68rem] leading-relaxed text-[#0369a1]">{link}</p>
             <div className="mt-2 flex gap-2">
               <Button size="sm" onClick={() => { void navigator.clipboard?.writeText(link); toast("Campaign link copied"); }}><Copy size={12} /> Copy link</Button>
               <Button size="sm" variant="ghost" onClick={() => { exportCatalogue(); toast("Product feed exported for Meta & Google"); }}><Download size={12} /> Product feed</Button>
@@ -200,11 +200,11 @@ function Carts({ toast }: { toast: (message: string) => void }) {
                   <tr key={cart.id}>
                     <td>
                       <p className="font-medium">{cart.name || "Unnamed"}</p>
-                      <p className="adm-num text-[0.68rem] text-[#8aa697]">{cart.phone}</p>
+                      <p className="adm-num text-[0.68rem] text-[#6e6e73]">{cart.phone}</p>
                     </td>
-                    <td className="text-[0.73rem] text-[#b9cdbe]">{cart.items.map((item) => `${item.qty}× ${item.name}`).join(", ").slice(0, 60)}</td>
+                    <td className="text-[0.73rem] text-[#3a3a3c]">{cart.items.map((item) => `${item.qty}× ${item.name}`).join(", ").slice(0, 60)}</td>
                     <td className="adm-num text-right">{formatBDT(cart.value)}</td>
-                    <td className="text-[0.72rem] capitalize text-[#8aa697]">{cart.attribution?.source ?? "direct"}</td>
+                    <td className="text-[0.72rem] capitalize text-[#6e6e73]">{cart.attribution?.source ?? "direct"}</td>
                     <td className="text-right">
                       <div className="inline-flex gap-1.5">
                         {cart.recovered ? <Badge tone="emerald">Recovered</Badge> : (
@@ -262,15 +262,15 @@ function Outbox({ toast }: { toast: (message: string) => void }) {
         ) : (
           <ul className="flex flex-col gap-2.5">
             {rows.map((message) => (
-              <li key={message.id} className="rounded-xl border border-[#1d3529] bg-[#0b1712] p-3">
+              <li key={message.id} className="rounded-xl border border-[#e3e3e8] bg-[#f5f5f7] p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  {message.channel === "email" ? <Mail size={13} className="text-[#38bdf8]" /> : <MessageSquare size={13} className="text-[#c9f16b]" />}
+                  {message.channel === "email" ? <Mail size={13} className="text-[#0a84ff]" /> : <MessageSquare size={13} className="text-[#4d7c0f]" />}
                   <span className="text-[0.79rem] font-semibold">{message.subject}</span>
                   <Badge tone={message.status === "sent" ? "emerald" : message.status === "queued" ? "sky" : "amber"}>{message.status}</Badge>
-                  <span className="adm-num ml-auto text-[0.68rem] text-[#8aa697]">{message.to}</span>
+                  <span className="adm-num ml-auto text-[0.68rem] text-[#6e6e73]">{message.to}</span>
                 </div>
-                <p className="mt-1.5 text-[0.75rem] leading-relaxed text-[#b9cdbe]">{message.body}</p>
-                <p className="mt-1 text-[0.66rem] text-[#6f8b7c]">
+                <p className="mt-1.5 text-[0.75rem] leading-relaxed text-[#3a3a3c]">{message.body}</p>
+                <p className="mt-1 text-[0.66rem] text-[#8e8e93]">
                   {new Date(message.at).toLocaleString("en-GB")} · {message.template}
                   {message.reason ? ` · ${message.reason}` : ""}
                 </p>
@@ -313,18 +313,18 @@ function Events({ toast }: { toast: (message: string) => void }) {
         <Panel title="Connections" subtitle="IDs are set in Settings → Marketing">
           <ul className="flex flex-col gap-2.5">
             {connections.map((connection) => (
-              <li key={connection.id} className="flex items-center gap-3 rounded-xl border border-[#1d3529] bg-[#0b1712] p-3">
-                <RadioTower size={15} className={connection.value ? "text-[#34d399]" : "text-[#5d7a6a]"} />
+              <li key={connection.id} className="flex items-center gap-3 rounded-xl border border-[#e3e3e8] bg-[#f5f5f7] p-3">
+                <RadioTower size={15} className={connection.value ? "text-[#10b981]" : "text-[#8e8e93]"} />
                 <div className="min-w-0 flex-1">
                   <p className="text-[0.8rem] font-medium">{connection.label}</p>
-                  <p className="adm-num truncate text-[0.68rem] text-[#8aa697]">{connection.value || "Not connected"}</p>
+                  <p className="adm-num truncate text-[0.68rem] text-[#6e6e73]">{connection.value || "Not connected"}</p>
                 </div>
                 <Badge tone={connection.value ? "emerald" : "rose"}>{connection.value ? "live" : "off"}</Badge>
               </li>
             ))}
           </ul>
           {attribution && (
-            <dl className="adm-kv mt-3 border-t border-[#172b21] pt-3">
+            <dl className="adm-kv mt-3 border-t border-[#efeff3] pt-3">
               <dt>This session</dt><dd className="capitalize">{attribution.source} / {attribution.medium}</dd>
               <dt>Campaign</dt><dd className="truncate">{attribution.campaign}</dd>
               <dt>Landing</dt><dd className="truncate">{attribution.landingPage}</dd>
@@ -349,15 +349,15 @@ function Events({ toast }: { toast: (message: string) => void }) {
           ) : (
             <ul className="adm-scroll flex max-h-[520px] flex-col gap-2 overflow-y-auto pr-1">
               {events.slice(0, 60).map((event) => (
-                <li key={event.id} className="rounded-xl border border-[#1d3529] bg-[#0b1712] p-2.5">
+                <li key={event.id} className="rounded-xl border border-[#e3e3e8] bg-[#f5f5f7] p-2.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[0.79rem] font-semibold text-[#c9f16b]">{event.name}</span>
+                    <span className="text-[0.79rem] font-semibold text-[#4d7c0f]">{event.name}</span>
                     {event.destinations.length ? event.destinations.map((destination) => (
                       <Badge key={destination} tone={destination === "capi" ? "violet" : "sky"}>{destination}</Badge>
                     )) : <Badge tone="amber">blocked · no consent</Badge>}
-                    <span className="adm-num ml-auto text-[0.66rem] text-[#6f8b7c]">{new Date(event.at).toLocaleTimeString("en-GB")}</span>
+                    <span className="adm-num ml-auto text-[0.66rem] text-[#8e8e93]">{new Date(event.at).toLocaleTimeString("en-GB")}</span>
                   </div>
-                  <p className="adm-mono mt-1 break-all text-[0.66rem] leading-relaxed text-[#8aa697]">
+                  <p className="adm-mono mt-1 break-all text-[0.66rem] leading-relaxed text-[#6e6e73]">
                     {Object.entries(event.params)
                       .filter(([key]) => !["event_id"].includes(key))
                       .slice(0, 6)
@@ -370,7 +370,7 @@ function Events({ toast }: { toast: (message: string) => void }) {
           )}
         </Panel>
       </div>
-      <p className="flex items-center gap-1.5 text-[0.72rem] text-[#8aa697]">
+      <p className="flex items-center gap-1.5 text-[0.72rem] text-[#6e6e73]">
         <Link2 size={12} /> Verify the same events in Meta Events Manager → Test Events using your test code before scaling spend.
       </p>
     </>

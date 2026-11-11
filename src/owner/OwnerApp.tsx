@@ -124,7 +124,7 @@ export default function OwnerApp() {
 
       {toastMessage && (
         <div className="adm-toast" role="status">
-          <Check size={14} className="text-[#c9f16b]" /> {toastMessage}
+          <Check size={14} className="text-[#4d7c0f]" /> {toastMessage}
         </div>
       )}
     </div>
@@ -156,7 +156,7 @@ function LoginScreen({ onSuccess }: { onSuccess: (session: Session) => void }) {
         <form className="adm-login-card" onSubmit={(event) => void submit(event)}>
           <span className="adm-brand-mark mb-4"><ShieldCheck size={18} strokeWidth={2.4} /></span>
           <h1 className="font-display text-[1.35rem] font-bold leading-tight">Owner console</h1>
-          <p className="mt-1.5 text-[0.79rem] leading-relaxed text-[#8aa697]">
+          <p className="mt-1.5 text-[0.79rem] leading-relaxed text-[#6e6e73]">
             Live orders, inventory, payments and ad performance for your store.
           </p>
           <label className="adm-field mt-5">
@@ -167,11 +167,11 @@ function LoginScreen({ onSuccess }: { onSuccess: (session: Session) => void }) {
             <span className="adm-field-label">Password</span>
             <input className="adm-input" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} />
           </label>
-          {error && <p className="mt-2 flex items-center gap-1.5 text-[0.74rem] text-[#fda4af]"><AlertTriangle size={12} /> {error}</p>}
+          {error && <p className="mt-2 flex items-center gap-1.5 text-[0.74rem] text-[#b42318]"><AlertTriangle size={12} /> {error}</p>}
           <Button variant="primary" className="mt-4 w-full" type="submit" disabled={busy || !email || !password}>
             <Lock size={14} /> {busy ? "Checking…" : "Sign in"}
           </Button>
-          <Link href="/" className="mt-4 inline-flex items-center gap-1.5 text-[0.76rem] text-[#8aa697] hover:text-[#c9f16b]">
+          <Link href="/" className="mt-4 inline-flex items-center gap-1.5 text-[0.76rem] text-[#6e6e73] hover:text-[#4d7c0f]">
             <ArrowLeft size={12} /> Back to the storefront
           </Link>
         </form>

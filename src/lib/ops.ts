@@ -6,6 +6,8 @@
  * functions are what `src/app/api/admin/**` call against Postgres in production.
  */
 import { store } from "@/db/local-store";
+import type { AdminUser } from "@/db/ops-store";
+import { BUILTIN_ROLES, SECTION_ACCESS, allRoles, findRole, roleHas, sanitizePermissions, type AdminRole, type Permission } from "@/lib/admin-access";
 import { ops, type OrderEvent, type OrderPatch, type OrderStatus, type OutboxMessage, type PaymentStatus } from "@/db/ops-store";
 import type { Order, OrderItem, Product } from "@/db/schema";
 import { formatBDT } from "./format";
@@ -171,6 +173,9 @@ const NEXT_LABEL: Record<OrderStatus, string> = {
 };
 
 export function advanceStatus(orderNumber: string, status: OrderStatus, note?: string, actor = "admin"): MerchantOrder | null {
+  const actorName = currentAdmin()?.name;
+  if (actorName) actor = actorName;
+  audit("Changed order status", orderNumber, `→ ${status}${note ? ` · ${note}` : ""}`);
   const order = findOrder(orderNumber);
   if (!order) return null;
   const patch = ops.getOrderPatch(orderNumber);
@@ -200,7 +205,7 @@ export function advanceStatus(orderNumber: string, status: OrderStatus, note?: s
   /* Restock on cancellation, deduct nothing twice on delivery. */
   if ((status === "cancelled" || status === "returned") && !isSampleOrder(orderNumber)) {
     order.items.forEach((item) => {
-      const product = store.tables.products.find((entry) => entry.slug === item.slug);
+      const product = store.findAnyProduct(item.slug);
       if (product) store.patchProduct(product.slug, { stock: product.stock + item.qty });
     });
   }
@@ -215,6 +220,7 @@ export function advanceStatus(orderNumber: string, status: OrderStatus, note?: s
 }
 
 export function addOrderNote(orderNumber: string, body: string, actor = "admin") {
+  audit("Added order note", orderNumber);
   const order = findOrder(orderNumber);
   if (!order || !body.trim()) return null;
   ops.patchOrder(orderNumber, {
@@ -224,11 +230,13 @@ export function addOrderNote(orderNumber: string, body: string, actor = "admin")
 }
 
 export function setPaymentStatus(orderNumber: string, status: PaymentStatus, trxId?: string) {
+  audit("Updated payment", orderNumber, status);
   ops.patchOrder(orderNumber, { paymentStatus: status, trxId: trxId ?? ops.getOrderPatch(orderNumber).trxId });
   return findOrder(orderNumber);
 }
 
 export function markRefunded(orderNumber: string, amount: number) {
+  audit("Refunded order", orderNumber, formatBDT(amount));
   ops.patchOrder(orderNumber, { paymentStatus: "refunded", refundAmount: amount });
   return advanceStatus(orderNumber, "returned", `Refunded ${formatBDT(amount)}`);
 }
@@ -361,34 +369,41 @@ export function flushOutbox() {
 /* ---------------------------------------------------------------- */
 
 export function updateStock(slug: string, stock: number) {
-  const product = store.tables.products.find((entry) => entry.slug === slug);
-  if (!product) return null;
+  const before = store.findAnyProduct(slug)?.stock;
+  if (before !== undefined && Number.isFinite(stock) && before !== Math.max(0, Math.round(stock))) audit("Adjusted stock", store.findAnyProduct(slug)?.name ?? slug, `${before} → ${Math.max(0, Math.round(stock))}`);
+  const product = store.findAnyProduct(slug);
+  if (!product || !Number.isFinite(stock)) return null;
   store.patchProduct(slug, { stock: Math.max(0, Math.round(stock)) });
-  return store.tables.products.find((entry) => entry.slug === slug) ?? null;
+  return store.findAnyProduct(slug);
 }
 
 export function updatePrice(slug: string, price: number, compareAtPrice?: number | null) {
+  const was = store.findAnyProduct(slug)?.price;
+  if (was !== undefined && Number.isFinite(price) && was !== Math.round(price)) audit("Changed price", store.findAnyProduct(slug)?.name ?? slug, `${formatBDT(was)} → ${formatBDT(Math.round(price))}`);
+  if (!Number.isFinite(price)) return store.findAnyProduct(slug);
   store.patchProduct(slug, {
     price: Math.max(0, Math.round(price)),
     ...(compareAtPrice !== undefined ? { compareAtPrice: compareAtPrice === null ? null : Math.max(0, Math.round(compareAtPrice)) } : {}),
   });
-  return store.tables.products.find((entry) => entry.slug === slug) ?? null;
+  return store.findAnyProduct(slug);
 }
 
 export function toggleFeatured(slug: string) {
-  const product = store.tables.products.find((entry) => entry.slug === slug);
+  audit("Toggled bestseller", store.findAnyProduct(slug)?.name ?? slug);
+  const product = store.findAnyProduct(slug);
   if (!product) return null;
   store.patchProduct(slug, { featured: !product.featured });
-  return store.tables.products.find((entry) => entry.slug === slug) ?? null;
+  return store.findAnyProduct(slug);
 }
 
+/** Includes hidden listings: stock still needs managing while a product is off sale. */
 export function lowStock(): Product[] {
   const threshold = ops.state.settings.notifications.lowStockThreshold;
-  return store.tables.products.filter((product) => product.stock <= threshold).sort((a, b) => a.stock - b.stock);
+  return store.allProducts().filter((product) => product.stock <= threshold).sort((a, b) => a.stock - b.stock);
 }
 
 export function inventoryValue(): number {
-  return store.tables.products.reduce((sum, product) => sum + product.stock * product.price, 0);
+  return store.allProducts().reduce((sum, product) => sum + product.stock * product.price, 0);
 }
 
 /* ---------------------------------------------------------------- */
@@ -620,19 +635,263 @@ export function exportCatalogue() {
  * cookie issued by `/api/admin/login` — see `backend/auth.ts`.
  */
 export const DEMO_ADMIN_PIN = "246810";
+export const ADMIN_SESSION_HOURS = 8;
+const MAX_PIN_FAILURES = 5;
+const LOCKOUT_SECONDS = 60;
+
+/**
+ * Deterministic salted hash (cyrb53, two rounds). This is a convenience gate
+ * for the static preview, NOT server-grade protection: anyone with device
+ * access can clear browser storage. Production uses server-side auth.
+ */
+export function hashAdminPin(pin: string): string {
+  const input = `gsbd-console:${pin}`;
+  let h1 = 0xdeadbeef ^ input.length;
+  let h2 = 0x41c6ce57 ^ input.length;
+  for (let round = 0; round < 2; round += 1) {
+    for (let i = 0; i < input.length; i += 1) {
+      const ch = input.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  }
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+/* ---------------------------------------------------------------- */
+/* Staff accounts & role-based access                                */
+/* ---------------------------------------------------------------- */
+
+const OWNER_ID = "owner";
+
+/** Every store has at least the original owner account (migrates the old single PIN). */
+export function adminUsers(): AdminUser[] {
+  const users = ops.state.adminUsers;
+  if (users.length) return users;
+  return [{ id: OWNER_ID, name: "Store owner", email: "", roleId: "owner", pinHash: ops.state.adminAuth.pinHash, active: true, createdAt: new Date(0).toISOString(), lastLoginAt: null }];
+}
+
+function saveUsers(users: AdminUser[]) {
+  ops.set({ adminUsers: users });
+}
+
+export function rolesList(): AdminRole[] {
+  return allRoles(ops.state.adminRoles);
+}
+
+export function roleOf(user: AdminUser | null | undefined): AdminRole | undefined {
+  return user ? findRole(user.roleId, ops.state.adminRoles) : undefined;
+}
+
+export function currentAdmin(): AdminUser | null {
+  if (!adminSignedIn()) return null;
+  const id = ops.state.adminSession?.userId ?? OWNER_ID;
+  const user = adminUsers().find((entry) => entry.id === id);
+  return user && user.active ? user : null;
+}
+
+export function can(permission: Permission): boolean {
+  return roleHas(roleOf(currentAdmin()), permission);
+}
+
+export function canOpenSection(section: string): boolean {
+  const permission = SECTION_ACCESS[section];
+  return permission ? can(permission) : true;
+}
+
+/** Append to the activity log as the signed-in staff member. */
+export function audit(action: string, target: string, detail?: string) {
+  const user = currentAdmin();
+  if (!user) return; // storefront/system activity is not staff activity
+  ops.pushAudit({ userId: user?.id ?? "system", userName: user?.name ?? "System", roleId: user?.roleId ?? "-", action, target, detail });
+}
+
+/** True while the owner account still uses the shipped preview PIN. */
+export function usingDefaultAdminPin(): boolean {
+  const owner = adminUsers().find((user) => user.roleId === "owner" && user.active);
+  return !owner || owner.pinHash === null;
+}
 
 export function adminSignedIn(): boolean {
   const session = ops.state.adminSession;
   if (!session) return false;
-  return Date.now() - new Date(session.at).getTime() < 8 * 3600000;
+  const age = Date.now() - new Date(session.at).getTime();
+  return Number.isFinite(age) && age >= 0 && age < ADMIN_SESSION_HOURS * 3600000;
 }
 
+export function adminSessionExpiresAt(): Date | null {
+  const session = ops.state.adminSession;
+  return session ? new Date(new Date(session.at).getTime() + ADMIN_SESSION_HOURS * 3600000) : null;
+}
+
+export function adminLockRemaining(): number {
+  const until = ops.state.adminAuth.lockedUntil;
+  if (!until) return 0;
+  return Math.max(0, Math.ceil((new Date(until).getTime() - Date.now()) / 1000));
+}
+
+function pinMatchesUser(user: AdminUser, pin: string): boolean {
+  return user.pinHash ? hashAdminPin(pin) === user.pinHash : user.roleId === "owner" && pin === DEMO_ADMIN_PIN;
+}
+
+export type SignInResult = { ok: true } | { ok: false; reason: "locked" | "invalid"; remaining: number; attemptsLeft: number };
+
+export function attemptAdminSignIn(rawPin: string, userId: string = OWNER_ID): SignInResult {
+  const locked = adminLockRemaining();
+  if (locked > 0) return { ok: false, reason: "locked", remaining: locked, attemptsLeft: 0 };
+  const pin = rawPin.trim();
+  const auth = ops.state.adminAuth;
+  const users = adminUsers();
+  const user = users.find((entry) => entry.id === userId && entry.active);
+  if (user && /^\d{6}$/.test(pin) && pinMatchesUser(user, pin)) {
+    const now = new Date().toISOString();
+    ops.set({
+      adminSession: { at: now, userId: user.id },
+      adminAuth: { ...auth, failures: 0, lockedUntil: null },
+      adminUsers: users.map((entry) => (entry.id === user.id ? { ...entry, lastLoginAt: now } : entry)),
+    });
+    audit("Signed in", user.name);
+    return { ok: true };
+  }
+  const failures = auth.failures + 1;
+  if (failures >= MAX_PIN_FAILURES) {
+    ops.set({ adminAuth: { ...auth, failures: 0, lockedUntil: new Date(Date.now() + LOCKOUT_SECONDS * 1000).toISOString() } });
+    ops.pushAudit({ userId: user?.id ?? "unknown", userName: user?.name ?? "Unknown", roleId: user?.roleId ?? "-", action: "Sign-in locked", target: "Console", detail: "Too many wrong PINs" });
+    return { ok: false, reason: "locked", remaining: LOCKOUT_SECONDS, attemptsLeft: 0 };
+  }
+  ops.set({ adminAuth: { ...auth, failures, lockedUntil: null } });
+  return { ok: false, reason: "invalid", remaining: 0, attemptsLeft: MAX_PIN_FAILURES - failures };
+}
+
+/** Backwards-compatible boolean wrapper (owner account). */
 export function adminSignIn(pin: string): boolean {
-  if (pin.trim() !== DEMO_ADMIN_PIN) return false;
-  ops.set({ adminSession: { at: new Date().toISOString() } });
-  return true;
+  return attemptAdminSignIn(pin).ok;
+}
+
+const WEAK_PINS = new Set(["000000", "111111", "123456", "654321", "121212", "112233", "123123", DEMO_ADMIN_PIN]);
+
+export function pinProblem(pin: string): string | null {
+  if (!/^\d{6}$/.test(pin)) return "PINs must be exactly 6 digits.";
+  if (WEAK_PINS.has(pin) || /^(\d)\1{5}$/.test(pin) || "0123456789".includes(pin) || "9876543210".includes(pin)) {
+    return "Choose a less predictable PIN (not the default, repeated or sequential digits).";
+  }
+  return null;
+}
+
+type Result = { ok: true } | { ok: false; error: string };
+
+export function changeAdminPin(current: string, next: string, confirm: string): Result {
+  const user = currentAdmin();
+  if (!user) return { ok: false, error: "Your session has expired. Sign in again first." };
+  if (!pinMatchesUser(user, current.trim())) return { ok: false, error: "The current PIN is not correct." };
+  if (next !== confirm) return { ok: false, error: "The new PIN and confirmation do not match." };
+  const problem = pinProblem(next);
+  if (problem) return { ok: false, error: problem };
+  if (next === current.trim()) return { ok: false, error: "The new PIN must be different from the current PIN." };
+  saveUsers(adminUsers().map((entry) => (entry.id === user.id ? { ...entry, pinHash: hashAdminPin(next) } : entry)));
+  if (user.id === OWNER_ID) ops.set({ adminAuth: { ...ops.state.adminAuth, pinHash: hashAdminPin(next), changedAt: new Date().toISOString() } });
+  audit("Changed own PIN", user.name);
+  return { ok: true };
+}
+
+function activeOwners(users: AdminUser[]) {
+  return users.filter((user) => user.active && user.roleId === "owner").length;
+}
+
+export function createStaff(input: { name: string; email: string; roleId: string; pin: string }): Result {
+  if (!can("team.manage")) return { ok: false, error: "You do not have permission to manage staff." };
+  const name = input.name.trim();
+  const email = input.email.trim().toLowerCase();
+  if (name.length < 2) return { ok: false, error: "Enter the staff member's name." };
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: "That email address does not look right." };
+  const users = adminUsers();
+  if (email && users.some((user) => user.email === email)) return { ok: false, error: "Another account already uses this email." };
+  if (users.some((user) => user.name.toLowerCase() === name.toLowerCase())) return { ok: false, error: "Another account already uses this name." };
+  if (!findRole(input.roleId, ops.state.adminRoles)) return { ok: false, error: "Choose a role." };
+  const problem = pinProblem(input.pin);
+  if (problem) return { ok: false, error: problem };
+  const user: AdminUser = { id: ops.uid(), name, email, roleId: input.roleId, pinHash: hashAdminPin(input.pin), active: true, createdAt: new Date().toISOString(), lastLoginAt: null };
+  saveUsers([...users, user]);
+  audit("Added staff member", name, `Role: ${findRole(input.roleId, ops.state.adminRoles)?.name}`);
+  return { ok: true };
+}
+
+export function updateStaff(id: string, patch: { name?: string; email?: string; roleId?: string; active?: boolean }): Result {
+  if (!can("team.manage")) return { ok: false, error: "You do not have permission to manage staff." };
+  const users = adminUsers();
+  const target = users.find((user) => user.id === id);
+  if (!target) return { ok: false, error: "That account no longer exists." };
+  const me = currentAdmin();
+  const next = { ...target, ...patch, name: (patch.name ?? target.name).trim(), email: (patch.email ?? target.email).trim().toLowerCase() };
+  if (next.name.length < 2) return { ok: false, error: "Enter a name." };
+  if (patch.roleId && !findRole(patch.roleId, ops.state.adminRoles)) return { ok: false, error: "Choose a valid role." };
+  if (me?.id === id && (next.active === false || next.roleId !== target.roleId)) return { ok: false, error: "You cannot deactivate yourself or change your own role." };
+  const updated = users.map((user) => (user.id === id ? next : user));
+  if (activeOwners(updated) === 0) return { ok: false, error: "The store needs at least one active owner." };
+  saveUsers(updated);
+  const changes = [patch.roleId && patch.roleId !== target.roleId ? `role → ${findRole(patch.roleId, ops.state.adminRoles)?.name}` : "", patch.active === false ? "deactivated" : patch.active === true && !target.active ? "reactivated" : ""].filter(Boolean).join(", ");
+  audit("Updated staff member", next.name, changes || undefined);
+  return { ok: true };
+}
+
+export function resetStaffPin(id: string, pin: string): Result {
+  if (!can("team.manage")) return { ok: false, error: "You do not have permission to manage staff." };
+  const problem = pinProblem(pin);
+  if (problem) return { ok: false, error: problem };
+  const users = adminUsers();
+  const target = users.find((user) => user.id === id);
+  if (!target) return { ok: false, error: "That account no longer exists." };
+  saveUsers(users.map((user) => (user.id === id ? { ...user, pinHash: hashAdminPin(pin) } : user)));
+  audit("Reset staff PIN", target.name);
+  return { ok: true };
+}
+
+export function removeStaff(id: string): Result {
+  if (!can("team.manage")) return { ok: false, error: "You do not have permission to manage staff." };
+  const users = adminUsers();
+  const target = users.find((user) => user.id === id);
+  if (!target) return { ok: false, error: "That account no longer exists." };
+  if (currentAdmin()?.id === id) return { ok: false, error: "You cannot remove your own account." };
+  const rest = users.filter((user) => user.id !== id);
+  if (activeOwners(rest) === 0) return { ok: false, error: "The store needs at least one active owner." };
+  saveUsers(rest);
+  audit("Removed staff member", target.name);
+  return { ok: true };
+}
+
+export function saveRole(role: { id?: string; name: string; description: string; permissions: Permission[] }): Result {
+  if (!can("team.manage")) return { ok: false, error: "You do not have permission to manage roles." };
+  const name = role.name.trim();
+  if (name.length < 2) return { ok: false, error: "Give the role a name." };
+  if (BUILTIN_ROLES.some((entry) => entry.id === role.id)) return { ok: false, error: "Built-in roles cannot be edited. Duplicate it instead." };
+  const custom = ops.state.adminRoles;
+  if (rolesList().some((entry) => entry.name.toLowerCase() === name.toLowerCase() && entry.id !== role.id)) return { ok: false, error: "A role with this name already exists." };
+  const permissions = sanitizePermissions(role.permissions);
+  if (!permissions.length) return { ok: false, error: "Select at least one permission." };
+  if (role.id && custom.some((entry) => entry.id === role.id)) {
+    ops.set({ adminRoles: custom.map((entry) => (entry.id === role.id ? { ...entry, name, description: role.description.trim(), permissions } : entry)) });
+    audit("Updated role", name, `${permissions.length} permissions`);
+  } else {
+    ops.set({ adminRoles: [...custom, { id: `role-${ops.uid()}`, name, description: role.description.trim(), permissions, builtin: false }] });
+    audit("Created role", name, `${permissions.length} permissions`);
+  }
+  return { ok: true };
+}
+
+export function deleteRole(id: string): Result {
+  if (!can("team.manage")) return { ok: false, error: "You do not have permission to manage roles." };
+  const role = ops.state.adminRoles.find((entry) => entry.id === id);
+  if (!role) return { ok: false, error: "Built-in roles cannot be deleted." };
+  const users = adminUsers().filter((user) => user.roleId === id);
+  if (users.length) return { ok: false, error: `Reassign ${users.length} staff member${users.length === 1 ? "" : "s"} before deleting this role.` };
+  ops.set({ adminRoles: ops.state.adminRoles.filter((entry) => entry.id !== id) });
+  audit("Deleted role", role.name);
+  return { ok: true };
 }
 
 export function adminSignOut() {
+  if (adminSignedIn()) audit("Signed out", currentAdmin()?.name ?? "");
   ops.set({ adminSession: null });
 }

@@ -5,7 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight, Battery, BatteryCharging, ChevronDown, CircleHelp, CircuitBoard, Cpu,
-  Headphones, Heart, LayoutGrid, Menu, Package, ShoppingBag, Truck, Wrench, X, Zap,
+  Headphones, Heart, LayoutGrid, LockKeyhole, Menu, Package, ShoppingBag, Truck, Wrench, X, Zap,
 } from "lucide-react";
 import { useCart } from "@/lib/cart";
 import { useWishlist } from "@/lib/wishlist";
@@ -155,6 +155,8 @@ export function SiteHeader() {
               <Link href="/wishlist" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center justify-between rounded-xl px-3 py-2 text-sm hover:bg-cream">Wishlist <span className="font-mono text-xs text-muted">{wishlist.count}</span></Link>
               <Link href="/help" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center justify-between rounded-xl px-3 py-2 text-sm hover:bg-cream">Help centre <ArrowRight size={14} className="text-muted" /></Link>
               {SUPPORT_LINKS.map((link) => <Link key={link.href} href={link.href} onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center justify-between rounded-xl px-3 py-2 text-sm hover:bg-cream">{link.label}<ArrowRight size={14} className="text-muted" /></Link>)}
+              <div className="my-3 border-t border-line" />
+              <Link href="/admin" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center justify-between rounded-xl px-3 py-2 text-sm text-muted hover:bg-cream hover:text-ink"><span className="flex items-center gap-2"><LockKeyhole size={15} /> Merchant console</span><ArrowRight size={14} /></Link>
             </div>
             <div className="shrink-0 border-t border-line px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"><a href={`tel:${STORE.phone.replace(/\s/g, "")}`} className="flex min-h-11 items-center gap-2 text-sm font-semibold"><Headphones size={16} /> {STORE.phone}</a><p className="text-xs text-muted">Mirpur DOHS, Dhaka · {STORE.hours}</p></div>
           </div>

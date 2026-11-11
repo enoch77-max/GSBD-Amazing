@@ -137,7 +137,7 @@ overflow — with console-error and failed-request reporting. Screenshots land i
 
 ## Running it as a real shop
 
-The merchant console lives at **`/admin`** (preview PIN `246810`): orders,
+The merchant console lives at **`/admin`** (also **Menu → Merchant console**; preview PIN `246810`, change it in Settings → Security — see [docs/ADMIN_GUIDE.md](./docs/ADMIN_GUIDE.md)): product catalogue and ready-made packs, orders,
 fulfilment, inventory, customers, ad attribution, message outbox, pixel
 inspector and every launch setting. It opens with six weeks of generated
 trading history so the reports are readable — switch it off in

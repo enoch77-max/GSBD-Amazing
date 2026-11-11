@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Building2, Check, CreditCard, Eye, EyeOff, Megaphone, RotateCcw, Send, ShieldCheck, Truck } from "lucide-react";
+import { AlertTriangle, Building2, Check, CreditCard, Eye, EyeOff, KeyRound, Megaphone, RotateCcw, Send, ShieldCheck, Truck } from "lucide-react";
+import { ADMIN_SESSION_HOURS, adminSessionExpiresAt, adminSignOut, audit, changeAdminPin, currentAdmin, usingDefaultAdminPin } from "@/lib/ops";
+
+/* One activity entry per settings area per minute, not one per keystroke. */
+const lastSettingsAudit = new Map<string, number>();
+function auditSettings(area: string) {
+  const now = Date.now();
+  if (now - (lastSettingsAudit.get(area) ?? 0) < 60_000) return;
+  lastSettingsAudit.set(area, now);
+  audit("Changed settings", area);
+}
 import { ops } from "@/db/ops-store";
 import { DEFAULT_SETTINGS, gatewayReady, readinessAudit, type GatewayId, type StoreSettings } from "@/lib/settings";
 import { GATEWAY_LABEL } from "@/lib/payments";
@@ -15,10 +25,13 @@ const SECTIONS = [
   { id: "risk", label: "Fraud rules", icon: ShieldCheck },
   { id: "notifications", label: "Messaging", icon: Send },
   { id: "courier", label: "Courier", icon: Truck },
+  { id: "security", label: "Security", icon: KeyRound },
 ] as const;
 
-export function AdminSettings({ toast }: { toast: (message: string) => void }) {
-  const [section, setSection] = useState<(typeof SECTIONS)[number]["id"]>("identity");
+type SectionId = (typeof SECTIONS)[number]["id"];
+
+export function AdminSettings({ toast, initialSection }: { toast: (message: string) => void; initialSection?: SectionId }) {
+  const [section, setSection] = useState<SectionId>(initialSection ?? "identity");
   const [revision, setRevision] = useState(0);
   const settings = ops.state.settings;
   const issues = readinessAudit(settings);
@@ -26,11 +39,13 @@ export function AdminSettings({ toast }: { toast: (message: string) => void }) {
 
   const edit = <K extends keyof StoreSettings>(key: K, patch: Partial<StoreSettings[K]>) => {
     ops.updateSettings((current) => ({ ...current, [key]: { ...current[key], ...patch } }));
+    auditSettings(String(key));
     setRevision((value) => value + 1);
   };
 
   const editGateway = (id: GatewayId, patch: Partial<StoreSettings["payments"][GatewayId]>) => {
     ops.updateSettings((current) => ({ ...current, payments: { ...current.payments, [id]: { ...current.payments[id], ...patch } } }));
+    auditSettings(`payments · ${id}`);
     setRevision((value) => value + 1);
   };
 
@@ -38,17 +53,17 @@ export function AdminSettings({ toast }: { toast: (message: string) => void }) {
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-[1.5rem] font-bold leading-tight">Settings</h1>
-          <p className="text-[0.78rem] text-[#8aa697]">Everything needed to switch this store from demo to live trading.</p>
+          <h1 className="adm-page-title">Settings</h1>
+          <p className="text-[0.78rem] text-[#6e6e73]">Everything needed to switch this store from demo to live trading.</p>
         </div>
-        <Button size="sm" variant="ghost" onClick={() => { ops.updateSettings(() => structuredClone(DEFAULT_SETTINGS)); setRevision((v) => v + 1); toast("Settings restored to defaults"); }}>
+        <Button size="sm" variant="ghost" onClick={() => { ops.updateSettings(() => structuredClone(DEFAULT_SETTINGS)); audit("Restored default settings", "All settings"); setRevision((v) => v + 1); toast("Settings restored to defaults"); }}>
           <RotateCcw size={12} /> Restore defaults
         </Button>
       </div>
 
       {issues.length > 0 && (
-        <div className="rounded-xl border border-[#7c5a12] bg-[#241a08] p-3">
-          <p className="flex items-center gap-2 text-[0.82rem] font-semibold text-[#fcd34d]"><AlertTriangle size={14} /> {issues.filter((i) => i.severity === "blocker").length} blockers, {issues.filter((i) => i.severity === "warning").length} warnings</p>
+        <div className="rounded-xl border border-[#f3d38a] bg-[#fffbeb] p-3">
+          <p className="flex items-center gap-2 text-[0.82rem] font-semibold text-[#92400e]"><AlertTriangle size={14} /> {issues.filter((i) => i.severity === "blocker").length} blockers, {issues.filter((i) => i.severity === "warning").length} warnings</p>
           <ul className="mt-1.5 flex flex-wrap gap-1.5">
             {issues.map((issue) => (
               <li key={issue.id}><Badge tone={issue.severity === "blocker" ? "rose" : "amber"}>{issue.label}</Badge></li>
@@ -57,7 +72,7 @@ export function AdminSettings({ toast }: { toast: (message: string) => void }) {
         </div>
       )}
       {issues.length === 0 && (
-        <div className="flex items-center gap-2 rounded-xl border border-[#1d6b4c] bg-[#0e2f22] p-3 text-[0.82rem] text-[#6ee7a8]">
+        <div className="flex items-center gap-2 rounded-xl border border-[#bbf7d0] bg-[#f0fdf4] p-3 text-[0.82rem] text-[#15803d]">
           <Check size={15} /> All launch checks passed — the store is configured for live trading.
         </div>
       )}
@@ -69,6 +84,8 @@ export function AdminSettings({ toast }: { toast: (message: string) => void }) {
           </button>
         ))}
       </div>
+
+      {section === "security" && <SecurityPanel toast={toast} />}
 
       {section === "identity" && (
         <Panel title="Business identity" subtitle="Shown on invoices, legal pages and required for gateway onboarding">
@@ -97,11 +114,11 @@ export function AdminSettings({ toast }: { toast: (message: string) => void }) {
             </div>
           </Panel>
           <Panel title="How money is confirmed" subtitle="Never trust a customer-entered transaction ID">
-            <ol className="flex flex-col gap-2 text-[0.78rem] leading-relaxed text-[#b9cdbe]">
-              <li><b className="text-[#e8f2e6]">1.</b> Checkout creates a payment intent with a unique reference tied to the order number.</li>
-              <li><b className="text-[#e8f2e6]">2.</b> The customer pays on the provider's own page — card data never touches this store.</li>
-              <li><b className="text-[#e8f2e6]">3.</b> The provider calls <code className="adm-mono text-[#c9f16b]">/api/webhooks/payments</code>; the signature is verified and the amount matched against the order before it is marked paid.</li>
-              <li><b className="text-[#e8f2e6]">4.</b> A manual TrxID only ever sets the order to <i>Claimed</i> until you confirm it in the order drawer.</li>
+            <ol className="flex flex-col gap-2 text-[0.78rem] leading-relaxed text-[#3a3a3c]">
+              <li><b className="text-[#1d1d1f]">1.</b> Checkout creates a payment intent with a unique reference tied to the order number.</li>
+              <li><b className="text-[#1d1d1f]">2.</b> The customer pays on the provider's own page — card data never touches this store.</li>
+              <li><b className="text-[#1d1d1f]">3.</b> The provider calls <code className="adm-mono text-[#4d7c0f]">/api/webhooks/payments</code>; the signature is verified and the amount matched against the order before it is marked paid.</li>
+              <li><b className="text-[#1d1d1f]">4.</b> A manual TrxID only ever sets the order to <i>Claimed</i> until you confirm it in the order drawer.</li>
             </ol>
           </Panel>
         </>
@@ -224,7 +241,7 @@ function GatewayCard({ id, settings, onChange }: {
   const ready = gatewayReady(id, settings);
 
   return (
-    <div className="rounded-xl border border-[#1d3529] bg-[#0b1712] p-3">
+    <div className="rounded-xl border border-[#e3e3e8] bg-[#f5f5f7] p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[0.86rem] font-semibold">{GATEWAY_LABEL[id]}</span>
         <Badge tone={ready ? "emerald" : "rose"}>{ready ? (config.mode === "live" ? "live" : "sandbox") : "disabled"}</Badge>
@@ -240,7 +257,7 @@ function GatewayCard({ id, settings, onChange }: {
       </div>
 
       {id === "cod" ? (
-        <p className="mt-2 text-[0.74rem] leading-relaxed text-[#8aa697]">
+        <p className="mt-2 text-[0.74rem] leading-relaxed text-[#6e6e73]">
           Cash collected by the rider. Ceiling ৳{settings.shipping.codMaxOrder.toLocaleString("en-IN")}; advance of ৳{settings.shipping.codAdvanceAmount} above ৳{settings.shipping.codAdvanceAbove.toLocaleString("en-IN")}.
         </p>
       ) : (
@@ -251,7 +268,7 @@ function GatewayCard({ id, settings, onChange }: {
           <Field label={id === "sslcommerz" ? "Store password" : "App secret"}>
             <div className="relative">
               <input className="adm-input pr-9" type={reveal ? "text" : "password"} value={config.secretKey} placeholder={config.mode === "live" ? "required" : "optional in sandbox"} onChange={(e) => onChange({ secretKey: e.target.value })} />
-              <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8aa697] hover:text-[#c9f16b]" onClick={() => setReveal((value) => !value)} aria-label={reveal ? "Hide secret" : "Show secret"}>
+              <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6e6e73] hover:text-[#4d7c0f]" onClick={() => setReveal((value) => !value)} aria-label={reveal ? "Hide secret" : "Show secret"}>
                 {reveal ? <EyeOff size={13} /> : <Eye size={13} />}
               </button>
             </div>
@@ -262,8 +279,67 @@ function GatewayCard({ id, settings, onChange }: {
         </div>
       )}
       {config.mode === "live" && !ready && id !== "cod" && (
-        <p className="mt-2 flex items-center gap-1.5 text-[0.72rem] text-[#fda4af]"><AlertTriangle size={12} /> Live mode needs both credentials — this method is hidden from checkout until they are set.</p>
+        <p className="mt-2 flex items-center gap-1.5 text-[0.72rem] text-[#b42318]"><AlertTriangle size={12} /> Live mode needs both credentials — this method is hidden from checkout until they are set.</p>
       )}
+    </div>
+  );
+}
+
+export function SecurityPanel({ toast }: { toast: (message: string) => void }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [revision, setRevision] = useState(0);
+  void revision;
+  const me = currentAdmin();
+  const defaultPin = usingDefaultAdminPin() && me?.roleId === "owner";
+  const expires = adminSessionExpiresAt();
+  const digits = (value: string) => value.replace(/\D/g, "").slice(0, 6);
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const result = changeAdminPin(current, next, confirm);
+    if (!result.ok) { setError(result.error); return; }
+    setCurrent(""); setNext(""); setConfirm(""); setError("");
+    setRevision((value) => value + 1);
+    toast("Console PIN changed — use the new PIN next time");
+  };
+
+  return (
+    <div className="adm-grid lg:grid-cols-2">
+      <Panel title="Your PIN" subtitle={me ? `${me.name} · ${defaultPin ? "still using the default preview PIN" : "custom PIN set"}` : ""}>
+        {defaultPin && (
+          <p className="mb-3 flex items-start gap-2 rounded-lg border border-[#f3d38a] bg-[#fffbeb] p-2.5 text-[0.75rem] text-[#92400e]">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" /> The default PIN is shown on the sign-in screen. Set your own PIN before sharing this store.
+          </p>
+        )}
+        <form className="grid gap-3" onSubmit={submit} noValidate>
+          <Field label={defaultPin ? "Current PIN (default 246810)" : "Current PIN"}>
+            <input className="adm-input adm-num tracking-[0.3em]" type="password" inputMode="numeric" autoComplete="current-password" value={current} onChange={(e) => { setCurrent(digits(e.target.value)); setError(""); }} aria-label="Current PIN" />
+          </Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="New 6-digit PIN" hint="Avoid repeated or sequential digits">
+              <input className="adm-input adm-num tracking-[0.3em]" type="password" inputMode="numeric" autoComplete="new-password" value={next} onChange={(e) => { setNext(digits(e.target.value)); setError(""); }} aria-label="New PIN" />
+            </Field>
+            <Field label="Confirm new PIN">
+              <input className="adm-input adm-num tracking-[0.3em]" type="password" inputMode="numeric" autoComplete="new-password" value={confirm} onChange={(e) => { setConfirm(digits(e.target.value)); setError(""); }} aria-label="Confirm new PIN" />
+            </Field>
+          </div>
+          {error && <p className="adm-field-error" role="alert">{error}</p>}
+          <div><Button type="submit" variant="primary" disabled={current.length < 6 || next.length < 6 || confirm.length < 6}><KeyRound size={13} /> Change PIN</Button></div>
+        </form>
+      </Panel>
+
+      <Panel title="Access & sessions" subtitle="How you and your team open this console">
+        <div className="adm-help-card text-[0.78rem] leading-relaxed text-[#3a3a3c]">
+          <p>Open <code>/admin</code> on your store, or use <b className="text-[#1d1d1f]">Menu → Merchant console</b> and the footer link.</p>
+          <p>Sessions end after {ADMIN_SESSION_HOURS} hours. Five wrong PINs lock sign-in for one minute.</p>
+          {expires && <p>This session ends at <b className="text-[#1d1d1f]">{expires.toLocaleString()}</b>.</p>}
+          <p className="text-[#6e6e73]">This preview stores data and the PIN hash in this browser only. On the production server, owners sign in with email and password, and sessions are enforced server-side.</p>
+          <div><Button size="sm" variant="ghost" onClick={() => { adminSignOut(); window.location.reload(); }}>Sign out now</Button></div>
+        </div>
+      </Panel>
     </div>
   );
 }
