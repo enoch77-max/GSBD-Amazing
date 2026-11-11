@@ -30,7 +30,7 @@ const Link = forwardRef(function Link(props, ref) {
       ...rest,
       ref,
       target,
-      href: external ? to : to.startsWith("/") ? to : `/${to}`,
+      href: external || to.startsWith("/") || to.startsWith("#") || to.startsWith("?") ? to : `/${to}`,
       onClick(event) {
         if (typeof onClick === "function") onClick(event);
         if (event.defaultPrevented) return;

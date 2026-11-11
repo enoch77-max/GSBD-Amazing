@@ -41,7 +41,7 @@ export function LegalLayout({ title, intro, updated, sections }: {
 
         <div className="flex min-w-0 flex-col gap-3">
           {sections.map((section, index) => (
-            <section key={section.id} id={section.id} className="scroll-mt-28 rounded-2xl border border-line bg-cream p-4 sm:p-5">
+            <section key={section.id} id={section.id} className="scroll-mt-3 rounded-2xl border border-line bg-cream p-4 sm:p-5">
               <h2 className="flex items-baseline gap-2 text-lg">
                 <span className="font-mono text-[0.7rem] text-muted">{String(index + 1).padStart(2, "0")}</span>
                 {section.heading}

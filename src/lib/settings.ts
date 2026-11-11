@@ -7,6 +7,8 @@
  * from environment variables by `backend/config.ts`.
  */
 
+import { DEFAULT_PACK_RECOMMENDATIONS, sanitizePackRecommendations, type PackRecommendationSettings } from "@/lib/pack-recommendations";
+
 export type GatewayId = "bkash" | "nagad" | "sslcommerz" | "cod";
 
 export type GatewayConfig = {
@@ -82,6 +84,8 @@ export type StoreSettings = {
     apiSecret: string;
     autoBook: boolean;
   };
+  /** Smart "recommended" capsule shown on pack-builder suggestions. */
+  packRecommendations: PackRecommendationSettings;
 };
 
 export const DEFAULT_SETTINGS: StoreSettings = {
@@ -141,6 +145,7 @@ export const DEFAULT_SETTINGS: StoreSettings = {
     smsSenderId: "GLOWINGSPACE",
   },
   courier: { provider: "manual", apiKey: "", apiSecret: "", autoBook: false },
+  packRecommendations: structuredClone(DEFAULT_PACK_RECOMMENDATIONS),
 };
 
 /** Deep-merges persisted values over defaults so new settings never break old saves. */
@@ -158,6 +163,8 @@ export function mergeSettings(saved: unknown): StoreSettings {
           base.payments[id] = { ...base.payments[id], ...(value as Partial<GatewayConfig>) };
         }
       }
+    } else if (section === "packRecommendations") {
+      base.packRecommendations = sanitizePackRecommendations(incoming);
     } else {
       Object.assign(base[section] as Record<string, unknown>, incoming);
     }
@@ -202,6 +209,7 @@ export type PublicSettings = {
     smsProvider: string;
   };
   courier: Pick<StoreSettings["courier"], "provider" | "autoBook">;
+  packRecommendations: PackRecommendationSettings;
 };
 
 export type ReadinessIssue = { id: string; label: string; detail: string; severity: "blocker" | "warning"; href: string };

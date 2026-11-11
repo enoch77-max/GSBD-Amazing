@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Activity, AlertTriangle, ArrowLeft, Boxes, Check, Database, LayoutDashboard, Lock,
-  LogOut, Megaphone, Package, Settings as SettingsIcon, ShieldCheck, Users, Zap,
+  LogOut, Megaphone, Package, Settings as SettingsIcon, ShieldCheck, Sparkles, Users, Zap,
 } from "lucide-react";
 import { ops } from "@/db/ops-store";
 import { useStoreVersion } from "@/lib/use-store";
@@ -15,6 +15,7 @@ import { AdminOrders } from "@/components/admin/admin-orders";
 import { AdminCustomers, AdminInventory } from "@/components/admin/admin-inventory";
 import { AdminGrowth } from "@/components/admin/admin-growth";
 import { AdminSettings } from "@/components/admin/admin-settings";
+import { AdminPackAI } from "@/components/admin/admin-pack-ai";
 import { Button } from "@/components/admin/admin-ui";
 import "@/admin.css";
 
@@ -27,6 +28,7 @@ const TABS = [
   { id: "inventory", label: "Inventory", icon: Boxes },
   { id: "customers", label: "Customers", icon: Users },
   { id: "growth", label: "Growth", icon: Megaphone },
+  { id: "pack-ai", label: "Pack AI", icon: Sparkles },
   { id: "settings", label: "Settings", icon: SettingsIcon },
 ] as const;
 
@@ -73,8 +75,9 @@ export default function AdminPage() {
   const go = (next: string) => {
     setTab(next as TabId);
     setSelected(null);
-    window.history.replaceState(null, "", `#${next}`);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    /* Keep the router's history state (scroll key) — only the hash changes. */
+    window.history.replaceState(window.history.state, "", `#${next}`);
+    window.scrollTo({ top: 0, behavior: "instant" });
   };
 
   const openOrder = (order: MerchantOrder) => {
@@ -151,6 +154,7 @@ export default function AdminPage() {
             {tab === "inventory" && <AdminInventory toast={toast} />}
             {tab === "customers" && <AdminCustomers toast={toast} />}
             {tab === "growth" && <AdminGrowth toast={toast} />}
+            {tab === "pack-ai" && <AdminPackAI toast={toast} />}
             {tab === "settings" && <AdminSettings toast={toast} />}
           </main>
         </div>

@@ -15,7 +15,8 @@ export function ReviewsJump({
       onClick={(event) => {
         event.preventDefault();
         window.dispatchEvent(new CustomEvent("gsbd:open-reviews"));
-        document.getElementById("overview")?.scrollIntoView({ behavior: "smooth" });
+        /* Scroll after the reviews tab has rendered so the target is measured in its final layout. */
+        window.requestAnimationFrame(() => document.getElementById("overview")?.scrollIntoView({ behavior: "smooth", block: "start" }));
       }}
       className="flex items-center gap-1.5"
       aria-label="Jump to reviews"

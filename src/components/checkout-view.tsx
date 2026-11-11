@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { productLabel } from "@/lib/product-copy";
 import {
   ArrowRight,
@@ -77,6 +77,28 @@ export function CheckoutView() {
   const [promo, setPromo] = useState<Promo | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  /* Which element to bring into view once the error state has rendered. */
+  const [focusRequest, setFocusRequest] = useState<{ id: string; seq: number } | null>(null);
+  const requestFocus = (id: string) => setFocusRequest((current) => ({ id, seq: (current?.seq ?? 0) + 1 }));
+
+  /* Runs after the error messages are in the DOM, so positions are final.
+     Behaves like native form validation: focus the control and jump to it only
+     if it is off-screen — never an animated fling across the page. */
+  useLayoutEffect(() => {
+    if (!focusRequest) return;
+    const target = document.getElementById(focusRequest.id);
+    if (!target) return;
+    const control = target.matches("input, select, textarea, button, [tabindex]")
+      ? target
+      : target.querySelector<HTMLElement>("input, select, textarea, button");
+    const rect = target.getBoundingClientRect();
+    const header = document.querySelector("header")?.getBoundingClientRect().bottom ?? 0;
+    const bottomBar = document.querySelector<HTMLElement>("[data-sticky-checkout]");
+    const bottomInset = bottomBar && getComputedStyle(bottomBar).display !== "none" ? bottomBar.offsetHeight : 0;
+    const inView = rect.top >= Math.max(0, header) && rect.bottom <= window.innerHeight - bottomInset;
+    if (!inView) target.scrollIntoView({ block: "center", behavior: "instant" });
+    (control as HTMLElement | null)?.focus({ preventScroll: true });
+  }, [focusRequest]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
@@ -282,8 +304,7 @@ export function CheckoutView() {
       next.district = "Choose your district.";
     setErrors(next);
     if (Object.keys(next).length > 0) {
-      const firstError = Object.keys(next)[0];
-      document.getElementById(`field-${firstError}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      requestFocus(`field-${Object.keys(next)[0]}`);
       return false;
     }
     return true;
@@ -300,7 +321,7 @@ export function CheckoutView() {
     if (!validate()) return;
     if (otpRequired) {
       setSubmitError("Please verify your mobile number before placing the order.");
-      document.getElementById("otp-block")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      requestFocus("otp-block");
       return;
     }
     setSubmitting(true);
@@ -331,6 +352,7 @@ export function CheckoutView() {
         if (!result.ok) {
           setSubmitError(result.message);
           setSubmitting(false);
+          requestFocus(document.getElementById("trx") ? "trx" : "checkout-error");
           return;
         }
         verified = result.status === "paid";
@@ -387,11 +409,14 @@ export function CheckoutView() {
         window.location.assign(data.payment.redirectUrl);
         return;
       }
-      cart.clearCart();
+      /* Navigate first, then empty the bag in the same batch: the checkout
+         unmounts directly instead of re-rendering as an empty, shorter page. */
       router.push(`/order/${data.orderNumber}?new=1`);
+      cart.clearCart();
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Something went wrong.");
       setSubmitting(false);
+      requestFocus("checkout-error");
     }
   }
 
@@ -805,7 +830,7 @@ export function CheckoutView() {
           </section>
 
           {submitError && (
-            <p className="flex items-center gap-2 rounded-xl border border-ember/30 bg-ember/5 p-3 text-[0.8rem] text-ember">
+            <p id="checkout-error" role="alert" tabIndex={-1} className="flex items-center gap-2 rounded-xl border border-ember/30 bg-ember/5 p-3 text-[0.8rem] text-ember outline-none">
               <X size={14} /> {submitError}
             </p>
           )}
@@ -818,6 +843,7 @@ export function CheckoutView() {
 
         {/* mobile sticky order bar */}
         <div
+          data-sticky-checkout=""
           className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bone/95 px-3 py-2.5 backdrop-blur-xl lg:hidden"
           style={{ paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom))" }}
         >

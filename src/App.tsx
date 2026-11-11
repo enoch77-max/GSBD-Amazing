@@ -1,5 +1,5 @@
-import { Component, Suspense, lazy, useEffect, useMemo, useState, type ReactNode } from "react";
-import { RouteParamsContext, navigate, splitUrl, useRouteSnapshot } from "next/router-core.mjs";
+import { Component, Suspense, lazy, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import { RouteParamsContext, applyPendingScroll, navigate, splitUrl, useRouteSnapshot } from "next/router-core.mjs";
 import RootLayout from "@/app/layout";
 import HomePage from "@/app/page";
 import ShopPage from "@/app/shop/page";
@@ -219,13 +219,21 @@ function useRouteInfo() {
 }
 
 export default function App() {
-  const { pathname, hash, matched } = useRouteInfo();
+  const { pathname, matched, version } = useRouteInfo();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     setReady(true);
     initAnalytics();
   }, []);
+
+  /* Scroll is applied once the new route has committed and before the browser
+     paints it: top for a new page, the saved offset for back/forward, the
+     anchor for "#id". Doing it here (not inside navigate()) means the outgoing
+     page is never scrolled and the incoming one is measured fully rendered. */
+  useLayoutEffect(() => {
+    applyPendingScroll();
+  }, [version]);
 
   /* One PageView per navigation, plus ViewContent when a product page opens. */
   useEffect(() => {
@@ -250,19 +258,6 @@ export default function App() {
     document.title = matched ? matched.route.title(matched.params) : `Page not found${SUFFIX}`;
   }, [matched, pathname]);
 
-  useEffect(() => {
-    if (!hash) return;
-    let attempts = 0;
-    const scroll = () => {
-      attempts += 1;
-      const target = document.getElementById(decodeURIComponent(hash));
-      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
-      else if (attempts < 12) window.setTimeout(scroll, 60);
-    };
-    const timer = window.setTimeout(scroll, 80);
-    return () => window.clearTimeout(timer);
-  }, [hash, pathname]);
-
   const params = matched?.params ?? {};
 
   /* The console is a separate application surface — no storefront header/footer. */
@@ -278,7 +273,8 @@ export default function App() {
     <RootLayout>
       <RouteBoundary key={pathname}>
         <RouteParamsContext.Provider value={params}>
-          <div key={pathname} className={ready ? "route-view" : undefined}>
+          {/* Fades only on client navigations — never on first paint (no flash). */}
+          <div key={pathname} data-route-view="" className={version > 0 ? "route-view" : undefined}>
             {matched ? matched.route.element() : <NotFound />}
           </div>
         </RouteParamsContext.Provider>

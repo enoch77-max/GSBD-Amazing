@@ -3,10 +3,20 @@ import App from "./App";
 import { installLocalApi } from "@/lib/local-api";
 import { installAssetResolver } from "@/lib/media";
 import { bootLive, installLiveFetch, isLive } from "@/lib/live";
+import { ops } from "@/db/ops-store";
+import { loadPackRecommendationSettings } from "@/lib/pack-recommendations";
 import "@/app/globals.css";
 import "./preview.css";
 
 installAssetResolver();
+
+/* The merchant console saves smart recommendation rules to PostgreSQL. Pull
+   them on boot so every visitor sees the same capsule configuration; the local
+   copy stays as a fallback when the site is served as a pure static file. */
+void loadPackRecommendationSettings().then((remote) => {
+  if (!remote) return;
+  ops.updateSettings((current) => ({ ...current, packRecommendations: remote }));
+});
 
 const container = document.getElementById("root");
 

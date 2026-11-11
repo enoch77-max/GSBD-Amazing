@@ -44,7 +44,9 @@ export function ShopBrowser({ items, total, page, pageCount, categories, brands,
     const next = new URLSearchParams(params.toString());
     mutate(next);
     startTransition(() => router.push(next.size ? `${pathname}?${next.toString()}` : pathname, { scroll: false }));
-    if (scroll) resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    /* A new results page behaves like a new page: jump to the top of the
+       results instantly (filters keep the shopper where they are). */
+    if (scroll) resultsRef.current?.scrollIntoView({ behavior: "instant", block: "start" });
   }
   function selectCategory(slug?: string) {
     navigate(next => {

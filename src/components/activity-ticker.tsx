@@ -41,7 +41,21 @@ export function ActivityTicker() {
     return () => window.clearInterval(timer);
   }, [entries.length, paused]);
 
-  if (entries.length === 0) return null;
+  /* The strip always occupies its slot from the first paint. Rendering nothing
+     until the fetch resolved inserted it later and pushed the page down 56px —
+     a layout shift that also broke back/forward scroll restoration. */
+  if (entries.length === 0) {
+    return (
+      <aside className="activity-ticker no-print" aria-label="Workshop status">
+        <span className="activity-pulse"><Radio size={12} /></span>
+        <span className="activity-label">From the bench</span>
+        <div className="activity-copy">
+          <CheckCircle2 size={13} className="shrink-0 text-[#3d7a2f]" />
+          <p>Every pack is hand-built, capacity-tested and shipped across Bangladesh.</p>
+        </div>
+      </aside>
+    );
+  }
   const current = entries[index % entries.length];
 
   return (

@@ -30,7 +30,11 @@
   }
 
   html {
-    scroll-behavior: smooth;
+    /* No global smooth scrolling: it turned every programmatic scroll (route
+       changes, history restores, validation focus) into an animated fling.
+       Smoothness is requested explicitly where it is intended — same-page
+       anchors and in-page UI jumps. */
+    scrollbar-gutter: stable;
     scroll-padding-top: 8rem;
     scroll-padding-bottom: 6rem;
     -webkit-text-size-adjust: 100%;

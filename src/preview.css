@@ -11,19 +11,20 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, "Noto Sans Bengali", monospace;
 }
 
-@keyframes route-in {
+/* One page transition for the whole site: a 160ms opacity fade. Opacity only —
+   a transform here would become the containing block for position:fixed
+   children (checkout bar, filter drawer) and make them jump mid-transition. */
+@keyframes route-fade {
   from {
     opacity: 0;
-    transform: translate3d(0, 8px, 0);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
 
 .route-view {
-  animation: route-in 320ms cubic-bezier(0.22, 0.68, 0.24, 1) both;
+  animation: route-fade 160ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {

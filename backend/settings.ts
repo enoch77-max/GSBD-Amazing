@@ -12,6 +12,7 @@ import {
   type StoreSettings,
 } from "../src/lib/settings";
 import { query, queryOne } from "./db";
+import { sanitizePackRecommendations } from "../src/lib/pack-recommendations";
 import { badRequest } from "./http";
 import { config } from "./config";
 
@@ -61,7 +62,7 @@ const GATEWAY_IDS: GatewayId[] = ["bkash", "nagad", "sslcommerz", "cod"];
 export function sanitizePatch(patch: unknown): Partial<StoreSettings> {
   if (!isRecord(patch)) throw badRequest("Settings must be an object.");
   const out: Record<string, Record<string, unknown>> = {};
-  const topKeys: Array<keyof StoreSettings> = ["identity", "payments", "shipping", "marketing", "risk", "notifications", "courier"];
+  const topKeys: Array<keyof StoreSettings> = ["identity", "payments", "shipping", "marketing", "risk", "notifications", "courier", "packRecommendations"];
   for (const key of Object.keys(patch)) {
     if (!topKeys.includes(key as keyof StoreSettings)) throw badRequest(`Unknown settings section: ${key}.`);
   }
@@ -158,6 +159,11 @@ export function sanitizePatch(patch: unknown): Partial<StoreSettings> {
     out.courier = section;
   }
 
+  if (patch.packRecommendations !== undefined) {
+    if (!isRecord(patch.packRecommendations)) throw badRequest("packRecommendations must be an object.");
+    out.packRecommendations = sanitizePackRecommendations(patch.packRecommendations) as unknown as Record<string, unknown>;
+  }
+
   return out as Partial<StoreSettings>;
 }
 
@@ -219,6 +225,7 @@ export function publicSettings(settings: StoreSettings): PublicSettings {
       smsProvider: settings.notifications.smsProvider,
     },
     courier: { provider: settings.courier.provider, autoBook: settings.courier.autoBook },
+    packRecommendations: settings.packRecommendations,
   };
 }
 

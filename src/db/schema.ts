@@ -239,6 +239,13 @@ export const auditLog = pgTable(
   (table) => [index("audit_created_idx").on(table.createdAt)],
 );
 
+/** Merchant-controlled smart recommendation rules for the pack builder. */
+export const packRecommendationSettings = pgTable("pack_recommendation_settings", {
+  id: integer("id").primaryKey().default(1),
+  settings: jsonb("settings").$type<import("@/lib/pack-recommendations").PackRecommendationSettings>().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type OrderEventRow = typeof orderEvents.$inferSelect;
 export type PaymentRow = typeof payments.$inferSelect;
 export type NotificationRow = typeof notifications.$inferSelect;

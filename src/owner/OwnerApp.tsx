@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle, ArrowLeft, Boxes, Check, LayoutDashboard, Lock, LogOut,
-  Megaphone, Package, Settings as SettingsIcon, ShieldCheck, Users, Zap,
+  Megaphone, Package, Settings as SettingsIcon, ShieldCheck, Sparkles, Users, Zap,
 } from "lucide-react";
+import { AdminPackAI } from "@/components/admin/admin-pack-ai";
 import { api, ApiError } from "@/lib/live";
 import { Button } from "@/components/admin/admin-ui";
 import { OwnerOverview } from "./Overview";
@@ -22,6 +23,7 @@ const TABS = [
   { id: "products", label: "Products", icon: Boxes },
   { id: "customers", label: "Customers", icon: Users },
   { id: "growth", label: "Growth", icon: Megaphone },
+  { id: "pack-ai", label: "Pack AI", icon: Sparkles },
   { id: "settings", label: "Settings", icon: SettingsIcon },
 ] as const;
 
@@ -114,6 +116,7 @@ export default function OwnerApp() {
             {tab === "products" && <OwnerProducts toast={toast} />}
             {tab === "customers" && <OwnerCustomers />}
             {tab === "growth" && <OwnerGrowth toast={toast} />}
+            {tab === "pack-ai" && <AdminPackAI toast={toast} />}
             {tab === "settings" && <OwnerSettings session={session} toast={toast} />}
           </main>
         </div>

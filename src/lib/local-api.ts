@@ -428,6 +428,12 @@ export function installLocalApi() {
       return original(input as RequestInfo, init);
     }
 
+    /* Admin-controlled pack rules are persisted by the real preview server.
+       Never shadow this endpoint with the in-memory route table. */
+    if (url.origin === window.location.origin && url.pathname === "/api/pack-recommendations") {
+      return original(input as RequestInfo, init);
+    }
+
     const isApi = url.origin === window.location.origin && /(^|\/)api\//.test(url.pathname);
     if (!isApi) return original(input as RequestInfo, init);
 
