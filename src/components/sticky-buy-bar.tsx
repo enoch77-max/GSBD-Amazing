@@ -61,11 +61,11 @@ export function StickyBuyBar({
         </div>
         {!soldOut && (
           <>
-            <button type="button" tabIndex={visible ? 0 : -1} onClick={onAdd} className="btn btn-primary h-10 shrink-0 gap-1.5 px-3 text-[0.75rem] sm:px-4">
-              <ShoppingBag size={14} /> {added ? "Added" : <><span className="sm:hidden">Add</span><span className="hidden sm:inline">Add to bag</span></>}
+            <button type="button" tabIndex={visible ? 0 : -1} onClick={onAdd} aria-label={added ? "Added to bag" : "Add to bag"} className="btn btn-primary h-10 shrink-0 gap-1.5 px-3 text-[0.75rem] sm:px-4">
+              <ShoppingBag size={14} /> {added ? "Added" : <><span className="max-[359px]:sr-only sm:hidden">Add</span><span className="hidden sm:inline">Add to bag</span></>}
             </button>
-            <button type="button" tabIndex={visible ? 0 : -1} disabled={buying} onClick={onBuyNow} className="btn btn-volt hidden h-10 shrink-0 gap-1.5 px-4 text-[0.75rem] min-[400px]:flex">
-              {buying ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />} Buy now
+            <button type="button" tabIndex={visible ? 0 : -1} disabled={buying} onClick={onBuyNow} className="btn btn-buy h-10 min-w-0 flex-1 gap-1.5 px-3 text-[0.8rem] sm:flex-none sm:px-5">
+              {buying ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} className="fill-current" />} Buy now
             </button>
           </>
         )}

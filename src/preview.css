@@ -1,6 +1,5 @@
 /* Preview-shell polish: route transitions and storefront-themed scrollbars.
-   Kept separate from the cloned app stylesheets so the original design tokens
-   in globals.css / store-decoration.css stay untouched. */
+   Kept separate from the app stylesheets so these preview-only rules stay scoped. */
 
 /* Every price is in Bangladeshi Taka. Inter and Bricolage Grotesque have no
    glyph for ৳ (U+09F3), so Noto Sans Bengali is appended to each stack and the
@@ -33,9 +32,9 @@
   }
 }
 
-/* Scrollbars in the shop's own palette */
+/* Cool gray scrollbars with a restrained green hover accent. */
 html {
-  scrollbar-color: #b9c9a0 #ece8dc;
+  scrollbar-color: #c1c9d1 #eef0f3;
   scrollbar-width: thin;
 }
 
@@ -45,21 +44,21 @@ html {
 }
 
 ::-webkit-scrollbar-track {
-  background: #ece8dc;
+  background: #eef0f3;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c3d3a6;
-  border: 3px solid #ece8dc;
+  background: #c1c9d1;
+  border: 3px solid #eef0f3;
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a6d838;
+  background: #9fbe68;
 }
 
 ::-webkit-scrollbar-corner {
-  background: #ece8dc;
+  background: #eef0f3;
 }
 
 .dark-scroll,
@@ -91,8 +90,8 @@ html {
   align-items: center;
   justify-content: center;
   gap: 1rem;
-  background: #f5f2e9;
-  color: #0b1712;
+  background: #f5f6f8;
+  color: #1c252b;
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -109,7 +108,7 @@ html {
   width: 8.5rem;
   height: 3px;
   border-radius: 999px;
-  background: #e2ddcd;
+  background: #dfe4e9;
   overflow: hidden;
 }
 

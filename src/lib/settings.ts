@@ -92,8 +92,8 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   identity: {
     name: "Glowing Space BD",
     legalName: "Glowing Space Electronics",
-    phone: "+880 1712 345 678",
-    whatsapp: "8801712345678",
+    phone: "+880 1400 788 738",
+    whatsapp: "8801400788738",
     email: "hello@glowingspacebd.com",
     address: "Shop 12, Level 2, Mirpur DOHS Shopping Complex, Dhaka 1216",
     hours: "Sat–Thu · 10:00–20:00",
@@ -102,8 +102,8 @@ export const DEFAULT_SETTINGS: StoreSettings = {
     domain: "glowingspacebd.com",
   },
   payments: {
-    bkash: { enabled: true, mode: "sandbox", publicKey: "", secretKey: "", merchantNumber: "01712345678", username: "", password: "" },
-    nagad: { enabled: true, mode: "sandbox", publicKey: "", secretKey: "", merchantNumber: "01712345678", username: "", password: "" },
+    bkash: { enabled: true, mode: "sandbox", publicKey: "", secretKey: "", merchantNumber: "01400788738", username: "", password: "" },
+    nagad: { enabled: true, mode: "sandbox", publicKey: "", secretKey: "", merchantNumber: "01400788738", username: "", password: "" },
     sslcommerz: { enabled: true, mode: "sandbox", publicKey: "", secretKey: "", merchantNumber: "", username: "", password: "" },
     cod: { enabled: true, mode: "live", publicKey: "", secretKey: "", merchantNumber: "", username: "", password: "" },
   },

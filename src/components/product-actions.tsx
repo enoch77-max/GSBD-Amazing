@@ -65,7 +65,7 @@ export function ProductActions({ product }: { product: Product }) {
         {soldOut ? (
           <a href={restockLink} target="_blank" rel="noreferrer" className="btn btn-outline mt-2 min-h-11 w-full text-[0.8rem]">Ask about restock</a>
         ) : (
-          <button type="button" onClick={buyNow} disabled={buying} className="btn btn-volt mt-2 min-h-11 w-full text-[0.82rem]">
+          <button type="button" onClick={buyNow} disabled={buying} className="btn btn-buy mt-2 min-h-11 w-full text-[0.84rem]">
             {buying ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />} Buy now · {formatBDT(product.price * qty)}
           </button>
         )}

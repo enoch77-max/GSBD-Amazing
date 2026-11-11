@@ -37,12 +37,12 @@ function render() {
 function renderOffline() {
   if (!container) return;
   container.innerHTML = [
-    '<div style="min-height:100vh;display:grid;place-items:center;background:#f5f2e9;padding:20px;font-family:system-ui,sans-serif">',
-    '<div style="max-width:26rem;text-align:center;background:#fbf9f3;border:1px solid #e2ddcd;border-radius:18px;padding:28px">',
-    '<p style="font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#6b7265">Connection lost</p>',
-    '<h1 style="margin:.5rem 0;font-size:1.4rem;color:#0b1712">The shop server did not answer</h1>',
-    '<p style="font-size:.86rem;color:#6b7265;line-height:1.6">Check your connection and try again. If this keeps happening, message us on WhatsApp and we will take your order there.</p>',
-    '<button id="gsbd-retry" style="margin-top:16px;background:#0b1712;color:#c9f16b;border:0;border-radius:12px;padding:12px 22px;font-size:.85rem;font-weight:600;cursor:pointer">Try again</button>',
+    '<div style="min-height:100vh;display:grid;place-items:center;background:#f5f6f8;padding:20px;font-family:system-ui,sans-serif">',
+    '<div style="max-width:26rem;text-align:center;background:#fff;border:1px solid #dfe4e9;border-radius:18px;padding:28px">',
+    '<p style="font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#66717b">Connection lost</p>',
+    '<h1 style="margin:.5rem 0;font-size:1.4rem;color:#1c252b">The shop server did not answer</h1>',
+    '<p style="font-size:.86rem;color:#66717b;line-height:1.6">Check your connection and try again. If this keeps happening, message us on WhatsApp and we will take your order there.</p>',
+    '<button id="gsbd-retry" style="margin-top:16px;background:#1c252b;color:#c9f16b;border:0;border-radius:12px;padding:12px 22px;font-size:.85rem;font-weight:600;cursor:pointer">Try again</button>',
     "</div></div>",
   ].join("");
   document.getElementById("gsbd-retry")?.addEventListener("click", () => window.location.reload());

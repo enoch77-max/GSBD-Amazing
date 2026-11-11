@@ -38,7 +38,7 @@ export default function ProductPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(jsonLd).replace(/</g,"\\u003c")}} />
       <Link href={`/shop?category=${product.categorySlug}`} className="mb-1 inline-flex min-h-10 items-center gap-1.5 text-xs font-medium text-muted hover:text-ink"><ArrowLeft size={14} />{category?.name ?? "Products"}</Link>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-8">
-        <div className="min-w-0 lg:sticky lg:top-28"><ProductGallery images={product.images} name={product.name} badge={product.badge} price={product.price} compareAt={product.compareAtPrice} sku={product.sku} /></div>
+        <div className="min-w-0 lg:sticky lg:top-40"><ProductGallery images={product.images} name={product.name} badge={product.badge} price={product.price} compareAt={product.compareAtPrice} sku={product.sku} /></div>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.65rem] text-muted"><Link href={`/shop?brand=${encodeURIComponent(product.brand)}`} className="font-medium hover:underline">{product.brand}</Link><span>·</span><span>{product.sku}</span></div>
           <h1 className="mt-1.5 text-[1.4rem] leading-[1.18] sm:text-[1.85rem]">{product.name}</h1>
@@ -53,7 +53,7 @@ export default function ProductPage() {
         </div>
       </div>
       <section className="mt-6"><ProductTabs product={product} reviews={reviews} categoryName={category?.name} /></section>
-      {related.length>0 && <section className="mt-4 border-t border-line pt-4"><div className="mb-3 flex items-center justify-between gap-2"><h2 className="text-xl">Related products</h2><Link href={`/shop?category=${product.categorySlug}`} className="inline-flex min-h-10 items-center gap-1 text-xs font-semibold">View all <ArrowRight size={13} /></Link></div><div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">{related.map(item => <ProductCard key={item.id} product={item} />)}</div></section>}
+      {related.length>0 && <section className="mt-4 border-t border-line pt-4"><div className="mb-3 flex items-center justify-between gap-2"><h2 className="text-xl">Related products</h2><Link href={`/shop?category=${product.categorySlug}`} className="inline-flex min-h-10 items-center gap-1 text-xs font-semibold">View all <ArrowRight size={13} /></Link></div><div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">{related.map(item => <ProductCard key={item.id} product={item} />)}</div></section>}
     </div>
   );
 }

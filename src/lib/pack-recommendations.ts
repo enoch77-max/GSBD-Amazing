@@ -307,7 +307,15 @@ export function rankPackAddOns(
 
 const ENDPOINT = "/api/pack-recommendations";
 
+/* Only a real http(s) origin can have the preview/production server behind it.
+   file://, about:srcdoc and blob: documents keep the local copy instead of
+   firing a request that can only fail. */
+function hasServer(): boolean {
+  return typeof window !== "undefined" && /^https?:$/.test(window.location.protocol);
+}
+
 export async function loadPackRecommendationSettings(): Promise<PackRecommendationSettings | null> {
+  if (!hasServer()) return null;
   try {
     const response = await fetch(ENDPOINT, { headers: { "x-requested-with": "fetch" }, cache: "no-store" });
     if (!response.ok) return null;
@@ -322,6 +330,7 @@ export async function loadPackRecommendationSettings(): Promise<PackRecommendati
 export async function savePackRecommendationSettings(
   settings: PackRecommendationSettings,
 ): Promise<{ ok: boolean; persisted: "postgres" | "memory" | "local" }> {
+  if (!hasServer()) return { ok: true, persisted: "local" };
   const clean = sanitizePackRecommendations(settings);
   try {
     const response = await fetch(ENDPOINT, {

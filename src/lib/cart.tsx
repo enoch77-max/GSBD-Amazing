@@ -42,6 +42,7 @@ type CartContextValue = {
   addItem: (line: Omit<CartLine, "qty">, qty?: number) => void;
   replaceItem: (slug: string, line: Omit<CartLine, "qty">) => void;
   removeItem: (slug: string) => void;
+  removeItems: (slugs: string[]) => void;
   updateQty: (slug: string, qty: number) => void;
   clearCart: () => void;
   openCart: () => void;
@@ -164,6 +165,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setLines((current) => current.filter((line) => line.slug !== slug));
   }, []);
 
+  const removeItems = useCallback((slugs: string[]) => {
+    const removed = new Set(slugs);
+    setLines((current) => current.filter((line) => !removed.has(line.slug)));
+  }, []);
+
   const replaceItem = useCallback((slug: string, next: Omit<CartLine, "qty">) => {
     setLines((current) => {
       const original = current.find((line) => line.slug === slug);
@@ -216,6 +222,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       addItem,
       replaceItem,
       removeItem,
+      removeItems,
       updateQty,
       clearCart,
       openCart,
@@ -232,6 +239,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     addItem,
     replaceItem,
     removeItem,
+    removeItems,
     updateQty,
     clearCart,
     openCart,

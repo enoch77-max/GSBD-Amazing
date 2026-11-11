@@ -96,11 +96,11 @@ export async function createIntent(input: {
       input.provider === "sslcommerz"
         ? undefined
         : {
-            recipient: config.merchantNumber || "01712345678",
+            recipient: config.merchantNumber || "01400788738",
             label,
             steps: [
               `Open your ${label} app and choose Send Money.`,
-              `Send ৳${input.amount.toLocaleString("en-IN")} to ${config.merchantNumber || "01712345678"}.`,
+              `Send ৳${input.amount.toLocaleString("en-IN")} to ${config.merchantNumber || "01400788738"}.`,
               `Use reference ${input.orderNumber} and paste the transaction ID below.`,
             ],
           },

@@ -22,6 +22,10 @@ export type PackCatalogEntry = {
   brand?: string;
   id?: number;
   shortDescription?: string;
+  description?: string;
+  specs?: { label: string; value: string }[];
+  badge?: string | null;
+  visible?: boolean;
 };
 export type PackComponentKind = "cells" | "bms" | "assembly" | "labour" | "testing" | "balance" | "charger" | "safety";
 export type PackComponent = {
@@ -518,7 +522,8 @@ export function calculatePack(input: unknown, options: { products?: PackCatalogE
   const tau = ((cellCount * cell.weightG) / 1000) * 1000 / hA; // s, cp ≈ 1000 J/kg·K
   const tempRiseC = round((heatW / hA) * (1 - Math.exp(-(runtimeH * 3600) / tau)), 1);
 
-  const continuousA = Math.floor(Math.min(cellLimitA * 0.8, bmsMatch?.profile.currentA ?? Infinity));
+  const interconnectLimitA = NICKEL_AMPS_PER_STRIP * nickelLayers * config.parallel;
+  const continuousA = Math.floor(Math.min(cellLimitA * 0.8, bmsMatch?.profile.currentA ?? Infinity, interconnectLimitA));
   const powerLimitW = Math.round(continuousA * Math.max(0, nominalVoltage - continuousA * resistanceOhm));
 
   /* Cycle life: rate, heat and weakest-group depth all shorten it. */

@@ -22,6 +22,7 @@ import { productLabel } from "@/lib/product-copy";
 import { PackBreakdown } from "@/components/pack-breakdown";
 import { calculatePack, suggestPackProducts } from "@/lib/pack-builder";
 import { readAllProducts } from "@/lib/queries";
+import { ConfirmRemoveDialog } from "@/components/confirm-remove-dialog";
 
 type Upsell = {
   id: number;
@@ -36,6 +37,7 @@ type Upsell = {
 export function CartDrawer() {
   const cart = useCart();
   const [upsell, setUpsell] = useState<Upsell[]>([]);
+  const [pendingRemoval, setPendingRemoval] = useState<{ slug: string; name: string } | null>(null);
 
   useEffect(() => {
     if (!cart.isOpen || upsell.length > 0) return;
@@ -171,7 +173,7 @@ export function CartDrawer() {
                               </Link>
                             )}
                           </div>
-                          <button type="button" onClick={() => cart.removeItem(line.slug)} className="grid size-8 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-bone hover:text-ember" aria-label={`Remove ${line.name}`}><Trash2 size={14} /></button>
+                           <button type="button" onClick={() => setPendingRemoval({ slug: line.slug, name: productLabel(line.slug, line.name) })} className="grid size-8 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-bone hover:text-ember" aria-label={`Remove ${line.name}`}><Trash2 size={14} /></button>
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-2">
                           <div className="flex items-center rounded-full border border-line bg-white">
@@ -253,6 +255,16 @@ export function CartDrawer() {
           </>
         )}
       </aside>
+      {pendingRemoval && (
+        <ConfirmRemoveDialog
+          name={pendingRemoval.name}
+          onCancel={() => setPendingRemoval(null)}
+          onConfirm={() => {
+            cart.removeItem(pendingRemoval.slug);
+            setPendingRemoval(null);
+          }}
+        />
+      )}
     </div>
   );
 }

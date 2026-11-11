@@ -6,6 +6,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { CartDrawer, CartToast } from "@/components/cart-drawer";
 import { MobileNav } from "@/components/mobile-nav";
+import { StorefrontMain } from "@/components/storefront-main";
 import { ConsentBanner } from "@/components/consent-banner";
 import { WishlistProvider } from "@/lib/wishlist";
 import "./features.css";
@@ -46,7 +47,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <WishlistProvider>
           <a href="#content" className="sr-only z-[100] rounded-lg bg-volt px-4 py-3 font-semibold text-ink focus:not-sr-only focus:fixed focus:left-3 focus:top-3">Skip to content</a>
           <SiteHeader />
-          <main id="content">{children}</main>
+          <StorefrontMain>{children}</StorefrontMain>
           <SiteFooter />
           <MobileNav />
           <CartDrawer />

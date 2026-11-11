@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { hashMode } from "next/router-core.mjs";
 import {
   Activity, AlertTriangle, ArrowLeft, Boxes, Check, Database, LayoutDashboard, Lock,
   LogOut, Megaphone, Package, Settings as SettingsIcon, ShieldCheck, Sparkles, Users, Zap,
@@ -75,8 +76,15 @@ export default function AdminPage() {
   const go = (next: string) => {
     setTab(next as TabId);
     setSelected(null);
-    /* Keep the router's history state (scroll key) — only the hash changes. */
-    window.history.replaceState(window.history.state, "", `#${next}`);
+    /* Keep the router's history state (scroll key) — only the hash changes.
+       In hash-routing mode the hash *is* the route ("#/admin"), so leave it. */
+    if (!hashMode) {
+      try {
+        window.history.replaceState(window.history.state, "", `#${next}`);
+      } catch {
+        /* a locked-down embed refused the URL update — the tab still switches */
+      }
+    }
     window.scrollTo({ top: 0, behavior: "instant" });
   };
 

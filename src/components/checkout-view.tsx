@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -26,7 +25,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { useCart } from "@/lib/cart";
+import { useCart, type CartLine } from "@/lib/cart";
 import {
   DELIVERY_METHODS,
   DISTRICTS,
@@ -46,7 +45,8 @@ import { track } from "@/lib/analytics";
 import { availableGateways, createIntent, verifyPayment, type PaymentIntent } from "@/lib/payments";
 import { api, ApiError, isLive, newEventId, saveClaim } from "@/lib/live";
 import type { GatewayId } from "@/lib/settings";
-import { PackBreakdown } from "@/components/pack-breakdown";
+import { ConfirmRemoveDialog } from "@/components/confirm-remove-dialog";
+import { CheckoutItems } from "@/components/checkout-items";
 
 type FormState = {
   name: string;
@@ -101,7 +101,9 @@ export function CheckoutView() {
   }, [focusRequest]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
+  const [mobileSummaryOpen, setMobileSummaryOpen] = useState(true);
+  const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
+  const [pendingRemoval, setPendingRemoval] = useState<CartLine | null>(null);
   const [copiedWallet, setCopiedWallet] = useState(false);
   const [intent, setIntent] = useState<PaymentIntent | null>(null);
   const [otpSent, setOtpSent] = useState(false);
@@ -121,6 +123,33 @@ export function CheckoutView() {
   const publicPayments = settings.payments as unknown as Record<string, { hosted?: boolean }>;
   const hostedCheckout = isLive() && (gatewayFor(payment) === "sslcommerz" || (payment === "bkash" && publicPayments.bkash?.hosted === true));
   const showTrx = (payment === "bkash" || payment === "nagad") && !hostedCheckout;
+  const selectedLines = cart.lines.filter((line) => !excluded.has(line.slug));
+  const selectedItemCount = selectedLines.reduce((count, line) => count + line.qty, 0);
+
+  function toggleSelected(slug: string) {
+    setExcluded((current) => {
+      const next = new Set(current);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+  }
+
+  const itemControls = {
+    lines: cart.lines,
+    excluded,
+    onToggle: toggleSelected,
+    onSelectAll: () => setExcluded(new Set<string>()),
+    onDeselectAll: () => setExcluded(new Set(cart.lines.map((line) => line.slug))),
+    onQuantity: cart.updateQty,
+    onRemove: setPendingRemoval,
+    disabled: submitting,
+  };
+
+  /* An intent is tied to its amount and product selection. Never reuse it after
+     an edit to the order, delivery, or promo. */
+  const selectionKey = selectedLines.map((line) => `${line.slug}:${line.qty}:${line.price}`).join("|");
+  useEffect(() => { setIntent(null); }, [selectionKey, delivery, form.district, promo]);
 
   /* Fire InitiateCheckout once, with the real bag contents. */
   useEffect(() => {
@@ -138,7 +167,7 @@ export function CheckoutView() {
   useEffect(() => {
     if (!settings.notifications.abandonedCart) return;
     const phone = form.phone.replace(/[\s-]/g, "");
-    if (!/^01[3-9]\d{8}$/.test(phone) || cart.lines.length === 0 || submitting) return;
+    if (!/^01[3-9]\d{8}$/.test(phone) || selectedLines.length === 0 || submitting) return;
     const timer = window.setTimeout(() => {
       const existing = ops.state.carts.find((entry) => entry.phone.replace(/[\s-]/g, "") === phone && !entry.recovered);
       saveAbandonedBag({
@@ -146,15 +175,15 @@ export function CheckoutView() {
         phone,
         name: form.name,
         updatedAt: new Date().toISOString(),
-        items: cart.lines.map((line) => ({ slug: line.slug, name: line.name, qty: line.qty, price: line.price })),
-        value: cart.subtotal,
+        items: selectedLines.map((line) => ({ slug: line.slug, name: line.name, qty: line.qty, price: line.price })),
+        value: subtotal,
         recovered: false,
         reminded: existing?.reminded ?? false,
         attribution: ops.state.attribution ?? undefined,
       });
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [form.phone, form.name, cart.lines, cart.subtotal, submitting, settings.notifications.abandonedCart]);
+  }, [form.phone, form.name, selectionKey, submitting, settings.notifications.abandonedCart]);
 
   async function sendOtpLive() {
     const phone = form.phone.replace(/[\s-]/g, "");
@@ -240,12 +269,13 @@ export function CheckoutView() {
     }
   }
 
-  const subtotal = cart.subtotal;
+  const subtotal = selectedLines.reduce((sum, line) => sum + line.price * line.qty, 0);
   const baseShipping = deliveryPrice(delivery, form.district);
   const freeStandard = delivery === "standard" && subtotal >= STORE.freeShippingThreshold;
-  const promoOff = promoDiscount(promo ?? undefined, subtotal);
-  const shipping = freeStandard || promo?.type === "shipping" ? 0 : baseShipping;
-  const total = Math.max(0, subtotal + shipping - promoOff);
+  const validPromo = promo && subtotal >= promo.minSubtotal ? promo : null;
+  const promoOff = promoDiscount(validPromo ?? undefined, subtotal);
+  const shipping = selectedLines.length === 0 || freeStandard || validPromo?.type === "shipping" ? 0 : baseShipping;
+  const total = selectedLines.length === 0 ? 0 : Math.max(0, subtotal + shipping - promoOff);
   const remainingForFree = Math.max(0, STORE.freeShippingThreshold - subtotal);
   const paymentOptions = PAYMENT_METHODS.filter(
     (method) => enabledGateways.includes(gatewayFor(method.id)) && !(method.id === "cod" && total > settings.shipping.codMaxOrder),
@@ -314,8 +344,10 @@ export function CheckoutView() {
     event.preventDefault();
     if (submitting) return;
     setSubmitError(null);
-    if (cart.lines.length === 0) {
-      setSubmitError("Your bag is empty.");
+    if (selectedLines.length === 0) {
+      setSubmitError("Select at least one product in your order summary before placing an order.");
+      if (window.innerWidth < 1024) setMobileSummaryOpen(true);
+      requestFocus(window.innerWidth < 1024 ? "checkout-items-mobile" : "checkout-items-desktop");
       return;
     }
     if (!validate()) return;
@@ -332,7 +364,7 @@ export function CheckoutView() {
       let verified = false;
       let reference = "";
       if (!live && gateway !== "cod") {
-        const created = intent ?? (await createIntent({
+        const created = intent?.amount === total && intent.provider === gateway ? intent : (await createIntent({
           provider: gateway,
           amount: total,
           orderNumber: `PRE-${Date.now().toString(36).toUpperCase()}`,
@@ -377,8 +409,8 @@ export function CheckoutView() {
           attribution: ops.state.attribution,
           paymentMethod: payment,
           deliveryMethod: delivery,
-          promoCode: promo?.code,
-          items: cart.lines.map((line) => ({
+          promoCode: validPromo?.code,
+          items: selectedLines.map((line) => ({
             slug: line.slug,
             qty: line.qty,
             customPack: line.customPack,
@@ -399,20 +431,19 @@ export function CheckoutView() {
         shipping: data.shipping ?? shipping,
         discount: data.discount ?? promoOff,
         payment_method: payment,
-        num_items: cart.itemCount,
-        content_ids: cart.lines.map((line) => line.slug),
-        contents: data.items ?? cart.lines.map((line) => ({ id: line.slug, quantity: line.qty, item_price: line.price })),
+        num_items: selectedItemCount,
+        content_ids: selectedLines.map((line) => line.slug),
+        contents: data.items ?? selectedLines.map((line) => ({ id: line.slug, quantity: line.qty, item_price: line.price })),
       }, eventId);
       if (data.claimToken && data.orderNumber) saveClaim(data.orderNumber, data.claimToken);
       if (data.payment?.redirectUrl) {
-        cart.clearCart();
+        cart.removeItems(selectedLines.map((line) => line.slug));
         window.location.assign(data.payment.redirectUrl);
         return;
       }
-      /* Navigate first, then empty the bag in the same batch: the checkout
-         unmounts directly instead of re-rendering as an empty, shorter page. */
+       /* Only purchased lines leave the bag; skipped products remain for later. */
       router.push(`/order/${data.orderNumber}?new=1`);
-      cart.clearCart();
+       cart.removeItems(selectedLines.map((line) => line.slug));
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Something went wrong.");
       setSubmitting(false);
@@ -465,7 +496,7 @@ export function CheckoutView() {
           <span className="flex items-center gap-2 text-[0.82rem] font-semibold">
             <ShoppingBag size={15} className="text-ink" />
             <span>
-              {mobileSummaryOpen ? "Hide" : "Show"} order summary ({cart.itemCount})
+              {mobileSummaryOpen ? "Hide" : "Edit"} order summary ({selectedItemCount} selected)
             </span>
             <ChevronDown
               size={14}
@@ -476,18 +507,7 @@ export function CheckoutView() {
         </button>
         {mobileSummaryOpen && (
           <div className="border-t border-line-soft px-4 py-3">
-            <ul className="space-y-2">
-              {cart.lines.map((line) => (
-                <li key={line.slug} className="text-[0.78rem]">
-                  <div className="flex items-center gap-2.5">
-                    <span className="relative size-10 shrink-0 overflow-hidden rounded-lg bg-bone"><Image src={line.image} alt="" fill sizes="40px" className="object-cover" /></span>
-                    <span className="min-w-0 flex-1 font-medium leading-snug">{productLabel(line.slug, line.name)} <span className="text-muted">×{line.qty}</span></span>
-                    <span className="shrink-0 font-semibold">{formatBDT(line.price * line.qty)}</span>
-                  </div>
-                  {line.customPack && <PackBreakdown line={line} />}
-                </li>
-              ))}
-            </ul>
+            <div id="checkout-items-mobile" tabIndex={-1}><CheckoutItems {...itemControls} /></div>
             <div className="mt-3 flex gap-2">
               <input
                 value={promoInput}
@@ -504,9 +524,10 @@ export function CheckoutView() {
               </button>
             </div>
             {promoError && <p className="mt-1 text-[0.68rem] text-ember">{promoError}</p>}
+            {promo && !validPromo && <p className="mt-1 text-[0.68rem] text-ember">{promo.code} needs a selected subtotal of {formatBDT(promo.minSubtotal)}.</p>}
             {promo && (
               <div className="mt-1.5 flex items-center justify-between gap-2 text-[0.7rem] font-medium text-[#3d7a2f]">
-                <span>{promo.code} applied</span>
+                <span>{promo.code} {validPromo ? "applied" : "not applied"}</span>
                 <button type="button" onClick={() => {setPromo(null);setPromoInput("");}} aria-label="Remove mobile promo code" className="grid size-8 place-items-center rounded-full text-muted"><X size={13} /></button>
               </div>
             )}
@@ -747,12 +768,12 @@ export function CheckoutView() {
                     <p className="font-mono text-[0.58rem] uppercase tracking-[0.12em] text-muted">
                       {payment === "bkash" ? "bKash" : "Nagad"} {settings.payments[payment === "nagad" ? "nagad" : "bkash"].mode === "live" ? "merchant" : "test recipient"}
                     </p>
-                    <p className="font-mono text-[0.88rem] font-semibold">{settings.payments[payment === "nagad" ? "nagad" : "bkash"].merchantNumber || "01712345678"}</p>
+                    <p className="font-mono text-[0.88rem] font-semibold">{settings.payments[payment === "nagad" ? "nagad" : "bkash"].merchantNumber || "01400788738"}</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => {
-                      navigator.clipboard?.writeText("01712345678");
+                      navigator.clipboard?.writeText(settings.payments[payment === "nagad" ? "nagad" : "bkash"].merchantNumber || "01400788738");
                       setCopiedWallet(true);
                       setTimeout(() => setCopiedWallet(false), 2000);
                     }}
@@ -849,13 +870,13 @@ export function CheckoutView() {
         >
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">
-              <p className="text-[0.62rem] uppercase tracking-[0.1em] text-muted">Total · {cart.itemCount} {cart.itemCount === 1 ? "item" : "items"}</p>
+              <p className="text-[0.62rem] uppercase tracking-[0.1em] text-muted">Total · {selectedItemCount} {selectedItemCount === 1 ? "item" : "items"} selected</p>
               <p className="text-[1.05rem] font-semibold leading-tight">{formatBDT(total)}</p>
             </div>
             <button
               type="submit"
               form="checkout-form"
-              disabled={submitting}
+              disabled={submitting || selectedLines.length === 0}
               className="btn btn-primary min-h-[2.9rem] flex-1 max-w-[13rem]"
             >
               {submitting ? (
@@ -867,35 +888,18 @@ export function CheckoutView() {
           </div>
         </div>
 
-        <aside className="hidden min-w-0 lg:sticky lg:top-28 lg:block lg:self-start">
+        <aside className="hidden min-w-0 lg:sticky lg:top-40 lg:block lg:self-start">
           <div className="rounded-2xl border border-line bg-cream p-4 sm:p-5">
             <div className="flex items-center justify-between">
               <h2 className="text-[1rem] font-semibold">Order summary</h2>
               <span className="rounded-full bg-bone px-2 py-0.5 font-mono text-[0.62rem] text-muted">
-                {cart.itemCount} item{cart.itemCount === 1 ? "" : "s"}
+                 {selectedItemCount} item{selectedItemCount === 1 ? "" : "s"} selected
               </span>
             </div>
 
-            <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
-              {cart.lines.map((line) => (
-                <li key={line.slug}>
-                  <div className="flex items-center gap-2.5">
-                    <span className="relative size-12 shrink-0 overflow-hidden rounded-lg border border-line-soft bg-bone">
-                      <Image src={line.image} alt="" fill sizes="48px" className="object-cover" />
-                      <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-ink font-mono text-[0.55rem] text-cream">{line.qty}</span>
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[0.78rem] font-medium leading-snug">{line.name}</span>
-                      <span className="block text-[0.68rem] text-muted">{formatBDT(line.price)} × {line.qty}</span>
-                    </span>
-                    <span className="text-[0.78rem] font-semibold">{formatBDT(line.price * line.qty)}</span>
-                  </div>
-                  {line.customPack && <PackBreakdown line={line} />}
-                </li>
-              ))}
-            </ul>
+             <div id="checkout-items-desktop" tabIndex={-1} className="mt-3"><CheckoutItems {...itemControls} /></div>
 
-            {remainingForFree > 0 ? (
+             {selectedLines.length === 0 ? null : remainingForFree > 0 ? (
               <div className="mt-3 rounded-xl bg-bone p-2.5">
                 <p className="flex items-center gap-1.5 text-[0.72rem]">
                   <Truck size={12} /> Add {formatBDT(remainingForFree)} for free standard delivery
@@ -934,9 +938,10 @@ export function CheckoutView() {
                 </button>
               </div>
               {promoError && <p className="mt-1 text-[0.68rem] text-ember">{promoError}</p>}
+               {promo && !validPromo && <p className="mt-1 text-[0.68rem] text-ember">{promo.code} needs a selected subtotal of {formatBDT(promo.minSubtotal)}.</p>}
               {promo && (
                 <p className="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-volt/15 px-2.5 py-1.5 text-[0.7rem] font-medium text-[#3d7a2f]">
-                  <span className="flex items-center gap-1"><Check size={11} /> {promo.code} applied — {promo.label}</span>
+                   <span className="flex items-center gap-1"><Check size={11} /> {promo.code} {validPromo ? "applied" : "not applied"} — {promo.label}</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -981,7 +986,7 @@ export function CheckoutView() {
             <button
               type="submit"
               form="checkout-form"
-              disabled={submitting}
+               disabled={submitting || selectedLines.length === 0}
               className="btn btn-primary mt-3 hidden w-full justify-between lg:flex"
             >
               {submitting ? (
@@ -1021,6 +1026,16 @@ export function CheckoutView() {
           </div>
         </aside>
       </div>
+       {pendingRemoval && (
+         <ConfirmRemoveDialog
+           name={productLabel(pendingRemoval.slug, pendingRemoval.name)}
+           onCancel={() => setPendingRemoval(null)}
+           onConfirm={() => {
+             cart.removeItem(pendingRemoval.slug);
+             setPendingRemoval(null);
+           }}
+         />
+       )}
     </div>
   );
 }

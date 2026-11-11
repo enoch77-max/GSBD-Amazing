@@ -60,6 +60,21 @@ The preview is a fully working storefront, not a mock:
   `GSBD-10482` / `01712345678`.
 * Reviews and orders persist to `localStorage`, so they survive a reload.
 
+### Arena preview deployment
+
+`npm run build` produces one self-contained `dist/index.html`, and that single file is all an
+arena preview serves. Three things keep it fully working when nothing else from `dist/` is around:
+
+* **Workshop photography is inlined.** `src/lib/media.ts` imports every `public/images/*` file the
+  UI references (hero slides, category tiles, About page, pack-builder art), so the single file
+  needs no `/images/*` requests. The originals stay in `public/` for the backend / VPS build.
+* **Any mount point routes correctly.** The router (`compat/next/router-core.mjs`) handles a root
+  URL, a nested `/preview/<id>/index.html` path, `file://`, and `about:srcdoc` / `blob:` iframes
+  (sandboxed or not). Documents without a real path start in hash mode (`#/shop`).
+* **The local `/api/*` layer works without an origin.** `src/lib/local-api.ts` answers API calls
+  even where `location.origin` is `"null"`, and pack-rule sync to a server is skipped when there is
+  no http(s) server to talk to.
+
 ### How the compatibility layer works
 
 | Next.js API | Preview runtime (`compat/next`, installed as a local `next` package) |

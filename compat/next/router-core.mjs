@@ -20,8 +20,16 @@ function stripIndex(pathname) {
   return pathname.endsWith("/index.html") ? pathname.slice(0, -"index.html".length) : pathname;
 }
 
+/* Documents whose URL carries no real path (about:srcdoc, blob:, data:) are a
+   common way to mount a single-file preview inside an iframe. Their pathname is
+   not a route ("srcdoc") and pushState is refused, so they start straight in
+   hash mode ("#/shop") and resolve links against a stand-in origin. http(s) and
+   file:// documents are unaffected. */
+const OPAQUE_URL = typeof window !== "undefined" && !/^(https?|file):$/.test(window.location.protocol);
+const LOCAL_ORIGIN = "http://gsbd.local";
+
 function detectBase() {
-  if (typeof window === "undefined") return "";
+  if (typeof window === "undefined" || OPAQUE_URL) return "";
   const raw = window.location.pathname;
   // Only directory-style mount points ("/preview/id/", "/preview/id/index.html")
   // are treated as a base path; an unknown file-style path is a real 404.
@@ -33,7 +41,7 @@ function detectBase() {
 }
 
 export const BASE = detectBase();
-export let hashMode = false;
+export let hashMode = OPAQUE_URL;
 
 function computeUrl() {
   if (typeof window === "undefined") return "/";
@@ -334,7 +342,9 @@ export function navigate(href, options = {}) {
 
   if (hashMode) {
     const nextHash = `#${route}`;
-    if (replace) window.location.replace(`${window.location.pathname}${window.location.search}${nextHash}`);
+    /* Absolute URL: a relative one would resolve against the embedder's base URL
+       inside an about:srcdoc document and navigate the frame away. */
+    if (replace) window.location.replace(`${window.location.href.split("#")[0]}${nextHash}`);
     else window.location.hash = nextHash;
   } else {
     try {
@@ -378,11 +388,12 @@ function interceptAnchors(event) {
   if (!raw || raw.startsWith("mailto:") || raw.startsWith("tel:") || raw.startsWith("javascript:")) return;
   let url;
   try {
-    url = new URL(raw, window.location.href);
+    /* about:srcdoc / blob: cannot act as a URL base: resolve against the current route instead. */
+    url = OPAQUE_URL ? new URL(raw, `${LOCAL_ORIGIN}${computeUrl()}`) : new URL(raw, window.location.href);
   } catch {
     return;
   }
-  if (url.origin !== window.location.origin) return;
+  if (url.origin !== (OPAQUE_URL ? LOCAL_ORIGIN : window.location.origin)) return;
   let path = url.pathname;
   if (BASE && path.startsWith(BASE)) path = path.slice(BASE.length) || "/";
   /* Static files (images, sitemap, robots) must load normally. */

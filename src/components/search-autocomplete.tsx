@@ -130,7 +130,7 @@ export function SearchAutocomplete() {
   }
 
   return (
-    <div ref={rootRef} className="store-search relative order-4 col-span-3 mt-1 w-full min-w-0 md:order-none md:ml-auto md:mt-0 md:max-w-[28rem] md:flex-1">
+    <div ref={rootRef} className="store-search relative order-4 col-span-3 mt-1 w-full min-w-0 md:order-none md:ml-auto md:mt-0 md:max-w-[22rem] md:flex-1 lg:max-w-[28rem] xl:max-w-[36rem]">
       <form role="search" onSubmit={submit}>
         <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
         <input

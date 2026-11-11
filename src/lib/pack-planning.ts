@@ -1,6 +1,6 @@
 /**
  * Runtime planning on top of the pack engine: exact constant-power runtime,
- * minimal-parallel sizing for a target, and a cross-chemistry optimiser.
+ * minimal-parallel sizing for a target, and a same-chemistry optimiser.
  * Pure and deterministic — shared by the builder UI and the advisor.
  */
 import {
@@ -63,6 +63,28 @@ export function simulateLoad(result: PackResult, load: LoadSpec): LoadSimulation
   };
 }
 
+/** Recheck current at the low-voltage end for constant-power loads. A nominal
+ * current calculation alone can under-size protection as the battery drains. */
+export function assessPackLoad(result: PackResult, load: LoadSpec): { safe: boolean; reasons: string[]; requiredA: number; runtimeH: number } {
+  const valid = load.mode === "A" ? Number.isFinite(load.amps) && load.amps > 0 && load.amps <= PACK_LIMITS.maxLoadCurrentA
+    : Number.isFinite(load.watts) && load.watts > 0 && load.watts <= 5000;
+  if (!valid) return { safe: false, reasons: ["Enter a positive load within the builder's supported range."], requiredA: Infinity, runtimeH: 0 };
+  const sim = simulateLoad(result, load);
+  const lowCurrent = load.mode === "A" ? load.amps : currentForPower(
+    load.watts / deliveryEfficiency(result, load), result.physics.cutoffVoltage, result.physics.resistanceMohm / 1000,
+  );
+  const requiredA = lowCurrent === null ? Infinity : Math.max(lowCurrent, sim.currentA);
+  const reasons: string[] = [];
+  if (!sim.feasible || !Number.isFinite(requiredA) || requiredA > result.physics.continuousA) {
+    reasons.push("This load exceeds the estimated continuous output, including low-voltage operation.");
+  }
+  if (!result.bms.ratedCurrentA || requiredA * BMS_HEADROOM > result.bms.ratedCurrentA + 0.001) {
+    reasons.push("The protection board needs at least 20% current headroom for this load.");
+  }
+  if (!Number.isFinite(result.physics.tempRiseC) || result.physics.tempRiseC > 35) reasons.push("Estimated heating is too high for an automatic recommendation.");
+  return { safe: reasons.length === 0, reasons, requiredA, runtimeH: sim.feasible ? sim.runtimeH : 0 };
+}
+
 /** Smallest parallel count that meets the target runtime and current headroom. */
 export function sizeParallel(
   config: PackConfiguration,
@@ -78,8 +100,8 @@ export function sizeParallel(
     try {
       const candidate = withLoad({ ...config, parallel: p, extras: [] }, load);
       const result = calculatePack(candidate, { products });
-      const sim = simulateLoad(result, load);
-      if (result.available && sim.feasible && !sim.overContinuous && sim.runtimeH >= targetH) return { parallel: p, reachable: true };
+      const assessment = assessPackLoad(result, load);
+      if (result.available && assessment.safe && assessment.runtimeH >= targetH) return { parallel: p, reachable: true };
     } catch {
       // An unavailable or unsupported candidate is not a valid recommendation.
     }
@@ -109,7 +131,7 @@ const VOLTAGE_CLASSES = [
 ];
 
 export function equivalentSeries(fromCell: CellId, series: number, toCell: CellId): number {
-  if (fromCell === toCell) return series;
+  if ((fromCell === "lifepo4-32700") === (toCell === "lifepo4-32700")) return series;
   const voltage = series * PACK_CELLS[fromCell].nominalVoltage;
   const lfp = toCell === "lifepo4-32700";
   const match = VOLTAGE_CLASSES.find((entry) => Math.abs(entry.v - voltage) / entry.v <= 0.12);
@@ -126,7 +148,7 @@ export type OptimizedOption = {
 };
 
 /**
- * For the same voltage class and load, find the cheapest, lightest and
+ * For the same chemistry, voltage and load, find the cheapest, lightest and
  * longest-lasting buildable pack that meets the target runtime.
  */
 export function optimizePack(
@@ -137,13 +159,14 @@ export function optimizePack(
 ): OptimizedOption[] {
   const candidates: Array<{ config: PackConfiguration; result: PackResult; runtimeH: number }> = [];
   for (const cellId of Object.keys(PACK_CELLS) as CellId[]) {
+    if ((cellId === "lifepo4-32700") !== (base.cellId === "lifepo4-32700")) continue;
     const series = equivalentSeries(base.cellId, base.series, cellId);
     const sized = sizeParallel({ ...base, cellId, series, extras: [] }, load, targetH, products);
     if (!sized.reachable) continue;
     const config = withLoad({ ...base, cellId, series, parallel: sized.parallel, extras: [] }, load);
     try {
       const result = calculatePack(config, { products });
-      if (!result.available || (result.bms.ratedCurrentA ?? 0) < config.loadCurrentA! * BMS_HEADROOM) continue;
+      if (!result.available || !assessPackLoad(result, load).safe) continue;
       candidates.push({ config, result, runtimeH: simulateLoad(result, load).runtimeH });
     } catch {
       /* configuration not buildable */

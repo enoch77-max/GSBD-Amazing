@@ -418,23 +418,27 @@ export function installLocalApi() {
   if (isLive()) return; // the real server answers /api/* — never intercept
   installed = true;
   const original = window.fetch.bind(window);
+  /* file://, about:srcdoc and blob: documents report their origin as the string
+     "null", which is not a usable URL base. Resolve against a stand-in origin
+     there so relative /api/* calls are still recognised and answered locally. */
+  const origin = /^https?:$/.test(window.location.protocol) ? window.location.origin : "http://gsbd.local";
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     let url: URL;
     try {
-      url = new URL(raw, window.location.origin);
+      url = new URL(raw, origin);
     } catch {
       return original(input as RequestInfo, init);
     }
 
     /* Admin-controlled pack rules are persisted by the real preview server.
        Never shadow this endpoint with the in-memory route table. */
-    if (url.origin === window.location.origin && url.pathname === "/api/pack-recommendations") {
+    if (url.origin === origin && url.pathname === "/api/pack-recommendations") {
       return original(input as RequestInfo, init);
     }
 
-    const isApi = url.origin === window.location.origin && /(^|\/)api\//.test(url.pathname);
+    const isApi = url.origin === origin && /(^|\/)api\//.test(url.pathname);
     if (!isApi) return original(input as RequestInfo, init);
 
     const signal = init?.signal ?? (input instanceof Request ? input.signal : null);

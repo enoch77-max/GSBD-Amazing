@@ -111,7 +111,7 @@ export function PackSpecs({ result }: { result: PackResult }) {
       title: result.bms.ratedCurrentA ? `${result.bms.name} · ${p.bmsHeadroomPct}% headroom · ${p.balance.method === "active" ? "active" : "passive"} balancing` : "No stocked BMS fits this series count",
       tone: !result.bms.ratedCurrentA || (p.bmsHeadroomPct ?? 0) < (BMS_HEADROOM - 1) * 100 ? "warn" : undefined,
     },
-    { icon: <Zap size={12} />, value: `${p.continuousA}A cont.`, title: `Continuous rating: 80% of the ${p.cellLimitA}A cell limit, capped by the BMS · ~${p.powerLimitW}W` },
+    { icon: <Zap size={12} />, value: `${p.continuousA}A cont.`, title: `Continuous estimate: 80% of the ${p.cellLimitA}A cell limit, capped by the BMS and nickel interconnects · ~${p.powerLimitW}W` },
     { icon: <Gauge size={12} />, value: `${p.cutoffVoltage}–${result.chargeVoltage}V`, title: `Operating window · ${p.resistanceMohm} mΩ · −${p.sagV}V sag at ${result.config.loadCurrentA}A` },
     { icon: <Thermometer size={12} />, value: `+${p.tempRiseC}°C`, title: `${p.heatW}W of heat at ${result.config.loadCurrentA}A`, tone: hot ? "warn" : undefined },
     { icon: <RefreshCw size={12} />, value: `${p.cycleLife.toLocaleString("en-IN")} cycles`, title: `To 80% capacity at this load · ~${Math.round(p.cycleLife / 365 * 10) / 10} years of daily use` },
@@ -142,11 +142,6 @@ export type Advice = {
   action?: { label: string; patch: Partial<PackConfiguration> };
 };
 
-const STOCKED_BMS: Record<"li-ion" | "lifepo4", number[]> = {
-  "li-ion": [3, 4, ...Array.from({ length: 17 }, (_, i) => i + 8)],
-  lifepo4: [4, ...Array.from({ length: 17 }, (_, i) => i + 8)],
-};
-
 function minParallelWhere(config: PackConfiguration, load: LoadSpec, products: PackCatalogEntry[], ok: (r: PackResult) => boolean): number | null {
   const maxP = Math.min(PACK_LIMITS.maxParallel, Math.floor(PACK_LIMITS.maxCells / config.series));
   for (let p = config.parallel + 1; p <= maxP; p += 1) {
@@ -162,7 +157,6 @@ function minParallelWhere(config: PackConfiguration, load: LoadSpec, products: P
 
 export function buildAdvice(result: PackResult, config: PackConfiguration, load: LoadSpec, products: PackCatalogEntry[]): Advice[] {
   const { physics: p } = result;
-  const chemistry = result.bms.chemistry;
   const s = config.series;
   const advice: Advice[] = [];
 
@@ -184,13 +178,11 @@ export function buildAdvice(result: PackResult, config: PackConfiguration, load:
     });
   }
 
-  if (result.bms.ratedCurrentA === null) {
-    const nearest = STOCKED_BMS[chemistry].reduce((best, n) => (Math.abs(n - s) < Math.abs(best - s) ? n : best), STOCKED_BMS[chemistry][0]);
+  if (!result.components.find((component) => component.key === "bms")?.available) {
     advice.push({
       id: "bms", tone: "warn",
       title: `No stocked ${s}S BMS`,
-      body: config.loadCurrentA! > 40 && s <= 4 ? "Small boards top out at 40A — lower the load or move to 8S+." : `${nearest}S has a protection board in stock.`,
-      action: nearest !== s && nearest * config.parallel <= PACK_LIMITS.maxCells ? { label: `${nearest}S`, patch: { series: nearest } } : undefined,
+      body: "Do not change your voltage to fit a different protection board. Compare the inventory-checked alternatives below or ask the workshop to source the correct BMS.",
     });
   } else if ((p.bmsHeadroomPct ?? 100) < (BMS_HEADROOM - 1) * 100) {
     advice.push({ id: "headroom", tone: "warn", title: `BMS headroom only ${p.bmsHeadroomPct}%`, body: "Inrush and heat can trip the board. Keep the continuous load at least 20% under its rating." });
@@ -199,9 +191,8 @@ export function buildAdvice(result: PackResult, config: PackConfiguration, load:
   if (load.mode === "W" && !load.ac && !p.direct12V && result.nominalVoltage < 20) {
     advice.push({
       id: "12v", tone: "tip",
-      title: `${result.chargeVoltage}V too high for 12V gear`,
-      body: "Needs a buck converter (−8% runtime). 4S LiFePO4 (14.6V max) wires straight to 12V devices.",
-      action: chemistry === "li-ion" ? { label: "4S LFP", patch: { cellId: "lifepo4-32700", series: 4 } } : undefined,
+      title: "Confirm your device's DC input range",
+      body: `This pack reaches ${result.chargeVoltage}V at full charge. A device labelled 12V may need a regulator; confirm its actual voltage tolerance before connecting it.`,
     });
   }
 
@@ -222,7 +213,7 @@ export function buildAdvice(result: PackResult, config: PackConfiguration, load:
 
 export function PackAdvisor({ advice, onPatch }: { advice: Advice[]; onPatch: (patch: Partial<PackConfiguration>) => void }) {
   if (advice.length === 0) {
-    return <p className="builder-advisor-ok"><CheckCircle2 size={14} /> Load, protection, heat and voltage all check out.</p>;
+    return <p className="builder-advisor-ok"><CheckCircle2 size={14} /> No additional model warnings. Final fit and wiring need a workshop check.</p>;
   }
   return (
     <ul className="builder-advisor" aria-label="Build advisor">

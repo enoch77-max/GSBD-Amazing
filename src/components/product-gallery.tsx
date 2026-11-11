@@ -19,7 +19,7 @@ export function ProductGallery({ images, name, badge, price, compareAt, sku }: {
   return (
     <div>
       <div
-        className="product-gallery-frame group relative aspect-[4/3] overflow-hidden rounded-2xl border border-line bg-[#eeeade] sm:aspect-[4/3.4] lg:aspect-square"
+        className="product-gallery-frame group relative aspect-[4/3] overflow-hidden rounded-2xl border border-line bg-[#f0f2f5] sm:aspect-[4/3.4] lg:aspect-square"
         style={{touchAction:"pan-y"}}
         onTouchStart={event => { const touch=event.touches[0]; if(touch) touchStart.current={x:touch.clientX,y:touch.clientY}; }}
         onTouchEnd={event => { const touch=event.changedTouches[0], start=touchStart.current; if(touch && start) { const dx=touch.clientX-start.x, dy=touch.clientY-start.y; if(Math.abs(dx)>45 && Math.abs(dx)>Math.abs(dy)) change(dx<0?1:-1); } touchStart.current=null; }}
@@ -35,7 +35,7 @@ export function ProductGallery({ images, name, badge, price, compareAt, sku }: {
         {gallery.length>1 && <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1"><button type="button" onClick={() => change(-1)} aria-label="Previous image" className="grid size-10 place-items-center rounded-full border border-ink/10 bg-cream/95"><ChevronLeft size={17} /></button><span aria-live="polite" className="rounded-full bg-cream/95 px-2 py-1 text-[0.65rem]">{index+1}/{gallery.length}</span><button type="button" onClick={() => change(1)} aria-label="Next image" className="grid size-10 place-items-center rounded-full border border-ink/10 bg-cream/95"><ChevronRight size={17} /></button></div>}
       </div>
       <div className="mt-2 flex items-center gap-2">
-        {gallery.length>1 && <div className="scrollbar-none flex min-w-0 gap-2 overflow-x-auto py-0.5">{gallery.map((image,i) => <button key={`${image}-${i}`} type="button" onClick={() => {setIndex(i);setZoom(false);}} aria-label={`View image ${i+1}`} aria-pressed={index===i} className={cn("relative size-12 shrink-0 overflow-hidden rounded-lg border-2 bg-[#eeeade] sm:size-16", index===i ? "border-ink" : "border-transparent opacity-70")}><Image src={image} alt="" fill sizes="64px" className="object-cover" /></button>)}</div>}
+        {gallery.length>1 && <div className="scrollbar-none flex min-w-0 gap-2 overflow-x-auto py-0.5">{gallery.map((image,i) => <button key={`${image}-${i}`} type="button" onClick={() => {setIndex(i);setZoom(false);}} aria-label={`View image ${i+1}`} aria-pressed={index===i} className={cn("relative size-12 shrink-0 overflow-hidden rounded-lg border-2 bg-[#f0f2f5] sm:size-16", index===i ? "border-ink" : "border-transparent opacity-70")}><Image src={image} alt="" fill sizes="64px" className="object-cover" /></button>)}</div>}
         <span className="ml-auto hidden text-[0.6rem] text-muted sm:block">{sku}</span>
       </div>
     </div>

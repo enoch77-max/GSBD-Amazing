@@ -26,7 +26,7 @@ export function LegalLayout({ title, intro, updated, sections }: {
       </header>
 
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,0.26fr)_minmax(0,0.74fr)] lg:gap-6">
-        <nav aria-label="On this page" className="rounded-2xl border border-line bg-cream p-3 lg:sticky lg:top-28">
+        <nav aria-label="On this page" className="rounded-2xl border border-line bg-cream p-3 lg:sticky lg:top-40">
           <p className="px-1 pb-2 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-muted">On this page</p>
           <ul className="flex flex-wrap gap-1 lg:flex-col">
             {sections.map((section) => (

@@ -37,14 +37,14 @@ export default function HomePage() {
   useStoreVersion();
   const categories = readCategories();
   const featured = readFeaturedProducts(12);
-  const newArrivals = readNewArrivals(5);
+  const newArrivals = readNewArrivals(8);
   const reviews = readLatestReviews(3);
   const miniUps = readProductBySlug("mini-ups-router-8800mah");
   const customPack = readProductBySlug("custom-battery-pack-service");
   const cell = readProductBySlug("samsung-inr18650-30q");
   const bms = readProductBySlug("daly-smart-bms-4s-40a");
   const esp32 = readProductBySlug("esp32-wroom-devkit-v1");
-  const bestsellers = featured.filter(product => product.slug !== "custom-battery-pack-service" && product.stock > 0).slice(0, 8);
+  const bestsellers = featured.filter(product => product.slug !== "custom-battery-pack-service" && product.stock > 0).slice(0, 12);
 
   const slides: OfferSlide[] = [
     {
@@ -139,7 +139,7 @@ export default function HomePage() {
 
       <section aria-label="Bestsellers">
         <ShelfTitle title="Bestsellers" href="/shop?sort=rating" />
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {bestsellers.map((product, index) => <ProductCard key={product.id} product={product} priority={index < 4} />)}
         </div>
       </section>
@@ -157,8 +157,8 @@ export default function HomePage() {
 
       <section aria-label="New arrivals">
         <ShelfTitle title="New arrivals" href="/shop?sort=newest" kind="new" />
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
-          {newArrivals.filter(product => product.slug !== "custom-battery-pack-service").slice(0,4).map(product => <ProductCard key={product.id} product={product} />)}
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
+          {newArrivals.filter(product => product.slug !== "custom-battery-pack-service").slice(0, 5).map(product => <ProductCard key={product.id} product={product} />)}
         </div>
       </section>
 

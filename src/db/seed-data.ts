@@ -341,6 +341,8 @@ const productList: P[] = [
     ],
     specs: [
       { label: "Configuration", value: "4S1P · 12.8V 100Ah" },
+      { label: "Chemistry", value: "LiFePO4" },
+      { label: "Continuous discharge current", value: "100A" },
       { label: "Energy", value: "1.28 kWh" },
       { label: "BMS", value: "JBD Smart 100A, BT" },
       { label: "Max charge", value: "50A" },

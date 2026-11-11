@@ -33,11 +33,11 @@ export class ApiError extends Error {
 }
 
 /** JSON client for the backend. Same-origin cookies + the CSRF fetch marker. */
-export async function api<T>(pathname: string, options: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
+export async function api<T>(pathname: string, options: { method?: string; body?: unknown; signal?: AbortSignal; cache?: RequestCache } = {}): Promise<T> {
   const method = options.method ?? "GET";
   const headers: Record<string, string> = {};
   if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") headers["x-requested-with"] = "fetch";
-  const init: RequestInit = { method, credentials: "same-origin", headers, signal: options.signal };
+  const init: RequestInit = { method, credentials: "same-origin", headers, signal: options.signal, cache: options.cache };
   if (options.body !== undefined) {
     headers["content-type"] = "application/json";
     init.body = JSON.stringify(options.body);
@@ -95,9 +95,9 @@ type CatalogPayload = {
   currency: string;
 };
 
-/** Pulls the live catalogue + settings into the client stores. Runs once. */
-export async function bootLive(): Promise<void> {
-  const catalog = await api<CatalogPayload>("/api/catalog");
+/** Pulls the live catalogue + settings on boot or an explicit stock recheck. */
+export async function bootLive(signal?: AbortSignal): Promise<void> {
+  const catalog = await api<CatalogPayload>("/api/catalog", { signal, cache: "no-store" });
   const products = catalog.products.map(
     (entry) => ({ ...entry, createdAt: new Date(entry.createdAt) }) as unknown as Product,
   );

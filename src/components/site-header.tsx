@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight, Battery, BatteryCharging, ChevronDown, CircleHelp, CircuitBoard, Cpu,
-  Headphones, Heart, Menu, Package, ShoppingBag, Truck, Wrench, X, Zap,
+  Headphones, Heart, LayoutGrid, Menu, Package, ShoppingBag, Truck, Wrench, X, Zap,
 } from "lucide-react";
 import { useCart } from "@/lib/cart";
 import { useWishlist } from "@/lib/wishlist";
@@ -30,6 +30,8 @@ function Logo() {
 
 export function SiteHeader() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeCategory = pathname === "/shop" ? searchParams.get("category") : null;
   const cart = useCart();
   const wishlist = useWishlist();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -86,17 +88,9 @@ export function SiteHeader() {
         </div>
       </div>
 
-      <div className="shell grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 py-2 md:flex md:h-[4.5rem] md:gap-4 md:py-0">
-        <button ref={menuButton} type="button" onClick={() => setMobileOpen(true)} aria-label="Open menu" aria-expanded={mobileOpen} className="grid size-10 shrink-0 place-items-center rounded-full hover:bg-cream lg:hidden"><Menu size={21} /></button>
+      <div className="shell grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 py-2 md:flex md:h-[4.5rem] md:gap-3 md:py-0 xl:gap-4">
+        <button ref={menuButton} type="button" onClick={() => setMobileOpen(true)} aria-label="Open menu" aria-expanded={mobileOpen} className="flex size-10 shrink-0 items-center justify-center gap-2 rounded-full hover:bg-cream md:w-auto md:border md:border-line md:bg-cream md:px-3"><Menu size={20} /><span className="hidden text-[0.8rem] font-semibold md:inline">Menu</span></button>
         <Logo />
-        <nav aria-label="Main navigation" className="hidden shrink-0 items-center gap-1 lg:flex">
-          <button type="button" onClick={() => setShopOpen(!shopOpen)} aria-expanded={shopOpen} aria-controls="shop-menu" className="flex min-h-11 items-center gap-1 rounded-full px-3 text-[0.85rem] font-medium hover:bg-cream">
-            Shop all <ChevronDown size={14} className={cn("transition-transform", shopOpen && "rotate-180")} />
-          </button>
-          <Link href="/pack-builder" className="hidden items-center gap-1.5 rounded-full bg-volt/25 px-3 py-2 text-[0.82rem] font-semibold text-ink hover:bg-volt/40 xl:flex"><BatteryCharging size={15} /> Pack builder</Link>
-          <Link href="/shop?category=battery-cells" className="hidden px-3 py-3 text-[0.85rem] text-muted hover:text-ink xl:block">Cells</Link>
-          <Link href="/shop?category=ups-power" className="hidden px-3 py-3 text-[0.85rem] text-muted hover:text-ink xl:block">UPS</Link>
-        </nav>
 
         <SearchAutocomplete />
 
@@ -113,6 +107,27 @@ export function SiteHeader() {
         </div>
       </div>
 
+      {/* Full desktop menu bar. Nothing is hidden behind a hamburger here: every
+          category and the main customer shortcuts stay visible. On narrower
+          desktop windows the row scrolls horizontally instead of dropping links. */}
+      <nav aria-label="Desktop menu" className="hidden border-t border-line-soft bg-cream lg:block">
+        <div className="shell scrollbar-none flex h-12 items-center gap-1 overflow-x-auto whitespace-nowrap">
+          <button type="button" onClick={() => setShopOpen(!shopOpen)} aria-expanded={shopOpen} aria-controls="shop-menu" className={cn("flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[0.78rem] font-semibold", shopOpen ? "bg-ink text-cream" : "bg-bone text-ink hover:bg-line-soft")}>
+            <LayoutGrid size={15} /> All categories <ChevronDown size={13} className={cn("transition-transform", shopOpen && "rotate-180")} />
+          </button>
+          <Link href="/shop" className={cn("flex min-h-9 shrink-0 items-center rounded-lg px-2.5 text-[0.78rem] font-medium", pathname === "/shop" && !activeCategory ? "bg-ink text-cream" : "text-muted hover:bg-bone hover:text-ink")}>All products</Link>
+          <span className="mx-1 h-5 w-px shrink-0 bg-line" aria-hidden="true" />
+          {NAV_CATEGORIES.map((category) => (
+            <Link key={category.slug} href={`/shop?category=${category.slug}`} aria-current={activeCategory === category.slug ? "page" : undefined} className={cn("flex min-h-9 shrink-0 items-center rounded-lg px-2.5 text-[0.78rem] font-medium", activeCategory === category.slug ? "bg-ink text-cream" : "text-muted hover:bg-bone hover:text-ink")}>{category.name}</Link>
+          ))}
+          <div className="ml-auto flex shrink-0 items-center gap-1 pl-3">
+            <Link href="/pack-builder" className={cn("flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[0.78rem] font-semibold", pathname === "/pack-builder" ? "bg-ink text-volt" : "bg-volt/35 text-ink hover:bg-volt/60")}><BatteryCharging size={14} /> Pack builder</Link>
+            <Link href="/track" className={cn("flex min-h-9 shrink-0 items-center rounded-lg px-2.5 text-[0.78rem] font-medium", pathname === "/track" ? "bg-ink text-cream" : "text-muted hover:bg-bone hover:text-ink")}>Track order</Link>
+            <Link href="/support" className={cn("flex min-h-9 shrink-0 items-center rounded-lg px-2.5 text-[0.78rem] font-medium", pathname === "/support" ? "bg-ink text-cream" : "text-muted hover:bg-bone hover:text-ink")}>Support</Link>
+          </div>
+        </div>
+      </nav>
+
       {shopOpen && (
         <div id="shop-menu" className="absolute inset-x-0 top-full hidden border-b border-line bg-cream shadow-lg lg:block">
           <div className="shell grid grid-cols-3 gap-2 py-4">
@@ -125,7 +140,7 @@ export function SiteHeader() {
       )}
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-[70] lg:hidden" role="dialog" aria-modal="true" aria-label="Shop menu">
+        <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label="Shop menu">
           <button type="button" aria-label="Close menu backdrop" onClick={() => setMobileOpen(false)} className="absolute inset-0 bg-ink/50 backdrop-blur-sm" />
           <div className="animate-slide-in-left relative flex h-dvh w-[min(90%,23rem)] flex-col bg-bone">
             <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3"><Logo /><button ref={closeButton} type="button" aria-label="Close menu" onClick={() => setMobileOpen(false)} className="grid size-10 place-items-center rounded-full border border-line"><X size={19} /></button></div>

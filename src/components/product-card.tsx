@@ -2,17 +2,20 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import { Check, Minus, Plus, ShoppingBag, Star } from "lucide-react";
 import type { Product } from "@/db/schema";
 import { useCart } from "@/lib/cart";
 import { cn, discountPercent, formatBDT } from "@/lib/format";
 import { brandLabel, productLabel } from "@/lib/product-copy";
 import { WishlistButton } from "@/components/wishlist-button";
+import { ConfirmRemoveDialog } from "@/components/confirm-remove-dialog";
 
 export function ProductCard({ product, className, priority = false, elevated = false }: {
   product: Product; className?: string; priority?: boolean; elevated?: boolean;
 }) {
   const cart = useCart();
+  const [confirmRemoval, setConfirmRemoval] = useState(false);
   const added = cart.lastAddedSlug === product.slug;
   const qty = cart.lines.find(line => line.slug === product.slug)?.qty ?? 0;
   const off = discountPercent(product.price, product.compareAtPrice);
@@ -29,13 +32,14 @@ export function ProductCard({ product, className, priority = false, elevated = f
     cart.addItem({ id: product.id, slug: product.slug, name: product.name, brand: product.brand, price: product.price, image, stock: product.stock });
   }
   function decrease() {
-    if (qty <= 1) cart.removeItem(product.slug);
+    if (qty <= 1) setConfirmRemoval(true);
     else cart.updateQty(product.slug, qty - 1);
   }
 
   return (
+    <>
     <article data-tone={product.categorySlug} className={cn("product-card group flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-line bg-cream transition-shadow duration-200 hover:shadow-[var(--shadow-card)]", elevated && "shadow-[var(--shadow-card)]", className)}>
-      <div className="product-media relative aspect-[5/4] overflow-hidden bg-[#eeeade]">
+      <div className="product-media relative aspect-[5/4] overflow-hidden bg-[#f0f2f5]">
         <Link href={`/product/${product.slug}`} aria-label={product.name} className="absolute inset-0">
           <Image src={image} alt={product.name} fill priority={priority} sizes="(max-width:640px) 48vw, (max-width:1024px) 32vw, 24vw" className={cn("object-cover transition-transform duration-500 group-hover:scale-[1.04]", soldOut && "opacity-60 saturate-50")} />
         </Link>
@@ -105,5 +109,7 @@ export function ProductCard({ product, className, priority = false, elevated = f
         </div>
       </div>
     </article>
+    {confirmRemoval && <ConfirmRemoveDialog name={title} onCancel={() => setConfirmRemoval(false)} onConfirm={() => { cart.removeItem(product.slug); setConfirmRemoval(false); }} />}
+    </>
   );
 }

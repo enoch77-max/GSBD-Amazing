@@ -15,8 +15,19 @@ GSBD-Amazing is a dual-deployment e-commerce platform for Glowing Space BD that 
 
 ## Update & Commit History
 
-### [f8e6b04] — 2026-11-11 11:50:50 (+03:00)
-- **Archive Source**: `gsbd-amaizing-t1.zip`
+### [ecb8ee5] — 2026-11-11 18:44:00 (+03:00)
+- **Archive Source**: `gsbd-amaizing-t1.zip` (Updated build)
+- **Type**: Availability Matching, BOM Stock Engine & Storefront Sidebar
+- **Summary**:
+  - Added real-time Pack Availability Matching engine (`src/lib/pack-availability.ts`) checking catalogue stock against full bill of materials and local bag usage.
+  - Added verified ready-pack specifications parser (`src/lib/ready-pack-specs.ts`) for physical pack catalog entries.
+  - Integrated pack availability UI components (`pack-availability.tsx`, `pack-change-dialog.tsx`, `confirm-remove-dialog.tsx`).
+  - Added desktop category sidebar navigation (`desktop-category-sidebar.tsx`) and enhanced storefront layouts.
+  - Added documentation in `docs/PACK_MATCHING.md` and test scripts (`scripts/pack-availability-regression.mjs`, `scripts/pack-matching-e2e.mjs`).
+  - Preserved all existing product photos and media assets in `public/images/`.
+
+### [5d29e3e] — 2026-11-11 11:50:50 (+03:00)
+- **Archive Source**: `gsbd-amaizing-t1.zip` (Initial tier)
 - **Type**: Major Pack Engine & Intelligence Upgrade
 - **Summary**:
   - Upgraded Pack Builder with intelligent load-based calculations, runtime estimates, and device presets (`pack-planning.ts`).

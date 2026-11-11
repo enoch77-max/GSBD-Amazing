@@ -89,7 +89,7 @@ export function Badge({
     ink: "bg-ink text-cream",
     ember: "bg-ember text-white",
     outline: "bg-cream/80 text-ink border border-line backdrop-blur",
-    muted: "bg-[#eceadf] text-muted",
+    muted: "bg-[#eef1f4] text-muted",
   };
   return (
     <span
