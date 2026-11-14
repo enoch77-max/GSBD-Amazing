@@ -2,7 +2,7 @@
 
 - **Repository**: [https://github.com/enoch77-max/GSBD-Amazing](https://github.com/enoch77-max/GSBD-Amazing)
 - **Local Directory**: `D:\Websites\Website designs\E-commerce\GSBD-Amazing`
-- **Visibility**: Public
+- **Visibility**: Private
 - **Production Branch**: `main`
 - **Stack**: React 19, Vite 7, Next.js Compatibility, Tailwind CSS 4, Drizzle ORM, Embedded Postgres
 
