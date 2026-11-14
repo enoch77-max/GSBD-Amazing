@@ -1,229 +1,332 @@
 "use client";
 
+/**
+ * Stock & Prices — fast warehouse editor.
+ *
+ * Price, sale price and counts stage locally. A single Save changes action
+ * commits the batch, while stock +/- buttons remain responsive enough for a
+ * barcode-led count. Low-stock, out-of-stock and estimated-margin queues use
+ * the same category assumptions as Analytics.
+ */
 import { useMemo, useState } from "react";
-import { Boxes, Check, Download, Minus, Plus, Search, Star, TrendingUp, Users } from "lucide-react";
-import { store } from "@/db/local-store";
+import { Barcode, Battery, Boxes, CircuitBoard, Cpu, Download, Package, Search, Zap } from "lucide-react";
+import { store, type ManagedProduct } from "@/db/local-store";
 import { ops } from "@/db/ops-store";
-import { formatBDT, formatDate } from "@/lib/format";
+import { formatBDT } from "@/lib/format";
 import { useStoreVersion } from "@/lib/use-store";
-import { can, exportCatalogue, inventoryValue, listOrders, lowStock, repeatCustomers, toggleFeatured, updatePrice, updateStock } from "@/lib/ops";
-import { Badge, Button, Empty, Panel, Stat } from "./admin-ui";
+import { audit, can, download, toCsv, updatePrice, updateStock } from "@/lib/ops";
+import { categoryOf, MARGIN_RATE } from "@/lib/admin-metrics";
+import { ProductThumb } from "./product-thumb";
+import { Button, Empty, PageHead, Panel, ReadOnlyNote } from "./admin-ui";
 
-export function AdminInventory({ toast }: { toast: (message: string) => void }) {
-  const storeVersion = useStoreVersion();
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
-  const [onlyLow, setOnlyLow] = useState(false);
-  const [revision, setRevision] = useState(0);
-  const [draft, setDraft] = useState<Record<string, { stock?: string; price?: string }>>({});
+type InventoryFilter = "all" | "low" | "out" | "margin";
+type PriceField = "regular" | "sale";
+type PendingEdit = { stock?: number; salePrice?: number; regularPrice?: number | null };
+type EditingCell = { slug: string; field: PriceField } | null;
 
-  const refresh = () => setRevision((value) => value + 1);
-  const threshold = ops.state.settings.notifications.lowStockThreshold;
+const FILTERS: Array<{ id: InventoryFilter; label: string }> = [
+  { id: "low", label: "Low stock" },
+  { id: "out", label: "Out of stock" },
+  { id: "margin", label: "Margin alert" },
+  { id: "all", label: "All products" },
+];
 
-  const { products, categories, low } = useMemo(() => {
-    void revision; void storeVersion;
-    const term = query.trim().toLowerCase();
-    return {
-      products: store.allProducts().filter((product) => {
-        if (category !== "all" && product.categorySlug !== category) return false;
-        if (onlyLow && product.stock > threshold) return false;
-        if (!term) return true;
-        return `${product.name} ${product.sku} ${product.brand}`.toLowerCase().includes(term);
-      }),
-      categories: store.tables.categories,
-      low: lowStock(),
-    };
-  }, [query, category, onlyLow, threshold, revision, storeVersion]);
-
-  const setField = (slug: string, field: "stock" | "price", value: string) =>
-    setDraft((current) => ({ ...current, [slug]: { ...current[slug], [field]: value } }));
-
-  const commit = (slug: string, field: "stock" | "price") => {
-    const raw = draft[slug]?.[field];
-    if (raw === undefined || raw === "") return;
-    const value = Number(raw);
-    if (!/^\d+$/.test(raw.trim()) || !Number.isFinite(value) || (field === "price" && value <= 0)) {
-      setDraft((current) => ({ ...current, [slug]: { ...current[slug], [field]: undefined } }));
-      toast(field === "price" ? "Enter a whole taka price above 0" : "Enter a whole number of units");
-      return;
-    }
-    if (field === "stock") updateStock(slug, value);
-    else updatePrice(slug, value);
-    setDraft((current) => ({ ...current, [slug]: { ...current[slug], [field]: undefined } }));
-    refresh();
-    toast(store.persistError() ?? `${field === "stock" ? "Stock" : "Price"} updated`);
-  };
-
-  const nudge = (slug: string, current: number, by: number) => {
-    updateStock(slug, Math.max(0, current + by));
-    refresh();
-  };
-
-  const outOfStock = store.allProducts().filter((product) => product.stock === 0).length;
-
-  return (
-    <>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="adm-page-title">Stock & prices</h1>
-          <p className="text-[0.78rem] text-[#6e6e73]">Quick inline edits. Use Catalogue to add products or change descriptions, photos and specifications.</p>
-        </div>
-        <Button size="sm" onClick={() => { exportCatalogue(); toast("Meta / Google product catalogue exported"); }}>
-          <Download size={13} /> Ad catalogue feed
-        </Button>
-      </div>
-
-      <div className="adm-kpis">
-        <Stat label="SKUs" value={String(store.allProducts().length)} hint={`${categories.length} categories`} icon={<Boxes size={16} />} />
-        <Stat label="Stock at retail" value={formatBDT(inventoryValue())} hint="sell-through value" tone="emerald" icon={<TrendingUp size={16} />} />
-        <Stat label="Low stock" value={String(low.length)} hint={`≤ ${threshold} units`} tone="amber" />
-        <Stat label="Out of stock" value={String(outOfStock)} hint="hidden from ads feed" tone="rose" />
-      </div>
-
-      <Panel>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[200px] flex-1">
-            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8e8e93]" />
-            <input className="adm-input pl-8" placeholder="Search product, SKU or brand…" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search inventory" />
-          </div>
-          <select className="adm-select w-auto" value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filter by category">
-            <option value="all">All categories</option>
-            {categories.map((entry) => <option key={entry.slug} value={entry.slug}>{entry.name}</option>)}
-          </select>
-          <button type="button" className="adm-chip" data-active={onlyLow} onClick={() => setOnlyLow((value) => !value)}>Low stock only</button>
-        </div>
-      </Panel>
-
-      <Panel>
-        {products.length === 0 ? (
-          <Empty icon={<Boxes size={22} />} title="No products match" />
-        ) : (
-          <div className="adm-table-wrap">
-            <table className="adm-table">
-              <thead>
-                <tr><th>Product</th><th>Category</th><th className="text-right">Price ৳</th><th className="text-center">Stock</th><th className="text-center">Featured</th></tr>
-              </thead>
-              <tbody>
-                {products.map((product) => (
-                  <tr key={product.slug}>
-                    <td>
-                      <p className="font-medium">{product.name} {!product.visible && <Badge className="ml-1">Hidden</Badge>}</p>
-                      <p className="adm-num text-[0.67rem] text-[#6e6e73]">{product.sku} · {product.brand}</p>
-                    </td>
-                    <td className="text-[0.73rem] capitalize text-[#6e6e73]">{product.categorySlug.replace(/-/g, " ")}</td>
-                    <td className="text-right">
-                      <input
-                        className="adm-input adm-num w-24 text-right" data-size="sm" inputMode="numeric"
-                        value={draft[product.slug]?.price ?? String(product.price)}
-                        disabled={!can("pricing.edit")}
-                        onChange={(event) => setField(product.slug, "price", event.target.value)}
-                        onBlur={() => commit(product.slug, "price")}
-                        onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
-                        aria-label={`Price for ${product.name}`}
-                      />
-                    </td>
-                    <td>
-                      <div className="flex items-center justify-center gap-1">
-                        <button type="button" className="adm-icon-btn size-7" disabled={!can("stock.edit")} onClick={() => nudge(product.slug, product.stock, -1)} aria-label={`Decrease stock for ${product.name}`}><Minus size={12} /></button>
-                        <input
-                          className="adm-input adm-num w-16 text-center" data-size="sm" inputMode="numeric"
-                          value={draft[product.slug]?.stock ?? String(product.stock)}
-                          disabled={!can("stock.edit")}
-                          onChange={(event) => setField(product.slug, "stock", event.target.value)}
-                          onBlur={() => commit(product.slug, "stock")}
-                          onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
-                          aria-label={`Stock for ${product.name}`}
-                        />
-                        <button type="button" className="adm-icon-btn size-7" disabled={!can("stock.edit")} onClick={() => nudge(product.slug, product.stock, 1)} aria-label={`Increase stock for ${product.name}`}><Plus size={12} /></button>
-                        {product.stock === 0 ? <Badge tone="rose">Out</Badge> : product.stock <= threshold ? <Badge tone="amber">Low</Badge> : null}
-                      </div>
-                    </td>
-                    <td className="text-center">
-                      <button
-                        type="button"
-                        className="adm-icon-btn mx-auto size-7"
-                        data-on={product.featured}
-                        disabled={!can("catalogue.edit")}
-                        aria-label={`${product.featured ? "Unfeature" : "Feature"} ${product.name}`}
-                        aria-pressed={product.featured}
-                        onClick={() => { toggleFeatured(product.slug); refresh(); toast(product.featured ? "Removed from bestsellers" : "Added to bestsellers"); }}
-                        style={product.featured ? { color: "#65a30d", borderColor: "#b8de6f", background: "#f1f9e0" } : undefined}
-                      >
-                        <Star size={12} fill={product.featured ? "currentColor" : "none"} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
-    </>
-  );
+function CategoryPill({ product }: { product: ManagedProduct }) {
+  const icon = product.categorySlug === "battery-cells" ? <Battery size={13} />
+    : product.categorySlug === "battery-packs" ? <Package size={13} />
+      : product.categorySlug === "bms-circuits" ? <Cpu size={13} />
+        : product.categorySlug === "ups-power" ? <Zap size={13} />
+          : product.categorySlug === "diy-prototyping" ? <CircuitBoard size={13} /> : <Boxes size={13} />;
+  const label = store.tables.categories.find((entry) => entry.slug === product.categorySlug)?.name ?? product.categorySlug;
+  return <span className="ax-category-pill" title={label}>{icon}<span>{label}</span></span>;
 }
 
-/* ------------------------------------------------------------------ */
+function StockStatus({ stock, threshold }: { stock: number; threshold: number }) {
+  if (stock <= 0) return <span className="ax-stock-pill" data-tone="out"><i />Out of stock</span>;
+  if (stock <= threshold) return <span className="ax-stock-pill" data-tone="low"><i />Low · {stock}</span>;
+  return <span className="ax-stock-pill" data-tone="ok"><i />In stock</span>;
+}
 
-export function AdminCustomers({ toast }: { toast: (message: string) => void }) {
+function estimatedCost(product: ManagedProduct) {
+  const rate = MARGIN_RATE[categoryOf(product.slug)];
+  const listPrice = product.compareAtPrice && product.compareAtPrice > product.price ? product.compareAtPrice : product.price;
+  return Math.round(listPrice * (1 - rate));
+}
+
+function marginAlert(product: ManagedProduct, salePrice = product.price) {
+  return salePrice < estimatedCost(product);
+}
+
+function bulkTier(product: ManagedProduct) {
+  return product.specs.find((spec) => /bulk|trade|wholesale|tier/i.test(spec.label) && spec.value.trim()) ?? null;
+}
+
+export function AdminInventory({ toast }: { toast: (message: string) => void }) {
+  const version = useStoreVersion();
   const [query, setQuery] = useState("");
-  const customers = useMemo(() => repeatCustomers(listOrders()), []);
-  const filtered = customers.filter((customer) =>
-    !query.trim() || `${customer.name} ${customer.phone}`.toLowerCase().includes(query.trim().toLowerCase()),
-  );
-  const repeat = customers.filter((customer) => customer.orders > 1);
-  const lifetime = customers.reduce((sum, customer) => sum + customer.spend, 0);
+  const [category, setCategory] = useState("all");
+  const [filter, setFilter] = useState<InventoryFilter>("all");
+  const [pending, setPending] = useState<Record<string, PendingEdit>>({});
+  const [editingCell, setEditingCell] = useState<EditingCell>(null);
+  const [editValue, setEditValue] = useState("");
+  const [tierFor, setTierFor] = useState<string | null>(null);
+  const [tierValue, setTierValue] = useState("");
+  const threshold = ops.state.settings.notifications.lowStockThreshold;
+  const canStock = can("stock.edit");
+  const canPrice = can("pricing.edit");
+
+  const all = useMemo(() => { void version; return store.allProducts(); }, [version]);
+  const categories = store.tables.categories;
+  const counts = useMemo(() => ({
+    all: all.length,
+    low: all.filter((product) => product.stock > 0 && product.stock <= threshold).length,
+    out: all.filter((product) => product.stock === 0).length,
+    margin: all.filter((product) => marginAlert(product)).length,
+  }), [all]);
+
+  const rows = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return all
+      .filter((product) => category === "all" || product.categorySlug === category)
+      .filter((product) => {
+        const stock = pending[product.slug]?.stock ?? product.stock;
+        const sale = pending[product.slug]?.salePrice ?? product.price;
+        return filter === "all" || (filter === "low" ? stock > 0 && stock <= threshold : filter === "out" ? stock === 0 : marginAlert(product, sale));
+      })
+      .filter((product) => !term || `${product.name} ${product.sku} ${product.brand} ${product.slug}`.toLowerCase().includes(term))
+      .sort((a, b) => {
+        const score = (product: ManagedProduct) => product.stock === 0 ? 0 : product.stock <= threshold ? 1 : marginAlert(product) ? 2 : 3;
+        return score(a) - score(b) || a.name.localeCompare(b.name);
+      });
+  }, [all, category, filter, query, pending]);
+
+  const staged = (product: ManagedProduct) => ({
+    stock: pending[product.slug]?.stock ?? product.stock,
+    sale: pending[product.slug]?.salePrice ?? product.price,
+    regular: pending[product.slug]?.regularPrice !== undefined ? pending[product.slug].regularPrice : product.compareAtPrice,
+  });
+
+  const stage = (slug: string, patch: PendingEdit) => {
+    setPending((current) => {
+      const product = store.findAnyProduct(slug);
+      if (!product) return current;
+      const nextEdit = { ...current[slug], ...patch };
+      const stock = nextEdit.stock ?? product.stock;
+      const sale = nextEdit.salePrice ?? product.price;
+      const regular = nextEdit.regularPrice !== undefined ? nextEdit.regularPrice : product.compareAtPrice;
+      if (stock === product.stock && sale === product.price && regular === product.compareAtPrice) {
+        const next = { ...current }; delete next[slug]; return next;
+      }
+      return { ...current, [slug]: nextEdit };
+    });
+  };
+
+  const beginEdit = (product: ManagedProduct, field: PriceField) => {
+    if (!canPrice) return;
+    const current = staged(product);
+    setEditingCell({ slug: product.slug, field });
+    setEditValue(String(field === "sale" ? current.sale : current.regular ?? current.sale));
+  };
+
+  const finishEdit = (commit: boolean) => {
+    if (!editingCell) return;
+    if (commit) {
+      const raw = editValue.trim();
+      if (editingCell.field === "regular" && !raw) stage(editingCell.slug, { regularPrice: null });
+      else {
+        const value = Number(raw.replace(/\D/g, ""));
+        if (!Number.isInteger(value) || value <= 0) toast("Enter a price above 0, or clear the regular price");
+        else stage(editingCell.slug, editingCell.field === "sale" ? { salePrice: value } : { regularPrice: value });
+      }
+    }
+    setEditingCell(null);
+    setEditValue("");
+  };
+
+  const stageStock = (product: ManagedProduct, quantity: number) => {
+    if (!canStock) return;
+    stage(product.slug, { stock: Math.max(0, Math.min(100000, Math.round(quantity))) });
+  };
+
+  const dirtyCount = Object.keys(pending).length;
+  const save = () => {
+    if (!dirtyCount) return;
+    const changes = Object.entries(pending);
+    for (const [slug, edit] of changes) {
+      const product = store.findAnyProduct(slug);
+      if (!product) continue;
+      const sale = edit.salePrice ?? product.price;
+      const regular = edit.regularPrice !== undefined ? edit.regularPrice : product.compareAtPrice;
+      if (!Number.isInteger(sale) || sale <= 0) { toast(`${product.sku}: sale price must be above 0`); return; }
+      if (regular !== null && regular !== undefined && (!Number.isInteger(regular) || regular <= sale)) {
+        toast(`${product.sku}: regular price must be higher than sale price`); return;
+      }
+      if (edit.stock !== undefined && (!Number.isInteger(edit.stock) || edit.stock < 0 || edit.stock > 100000)) {
+        toast(`${product.sku}: stock must be between 0 and 100,000`); return;
+      }
+    }
+    changes.forEach(([slug, edit]) => {
+      const product = store.findAnyProduct(slug);
+      if (!product) return;
+      if (edit.stock !== undefined && edit.stock !== product.stock) updateStock(slug, edit.stock);
+      if (edit.salePrice !== undefined || edit.regularPrice !== undefined) {
+        const sale = edit.salePrice ?? product.price;
+        const regular = edit.regularPrice !== undefined ? edit.regularPrice : product.compareAtPrice;
+        updatePrice(slug, sale, regular !== null && regular !== undefined && regular > sale ? regular : null);
+      }
+    });
+    audit("Saved stock and pricing batch", `${changes.length} products`);
+    setPending({});
+    toast(store.persistError() ?? `Saved ${changes.length} product${changes.length === 1 ? "" : "s"}`);
+  };
+  const discard = () => { setPending({}); setEditingCell(null); setEditValue(""); };
+
+  const priceControl = (product: ManagedProduct, field: PriceField) => {
+    const active = editingCell?.slug === product.slug && editingCell.field === field;
+    const current = staged(product);
+    const label = field === "regular" ? "Price" : "Sale price";
+    const amount = field === "sale" ? current.sale : current.regular ?? current.sale;
+    if (active) return (
+      <label className="ax-edit-price" data-field={field}>
+        <span>{label}</span>
+        <span className="ax-edit-price-field"><i>৳</i><input autoFocus inputMode="numeric" value={editValue} aria-label={`${label} for ${product.name}`}
+          onChange={(event) => setEditValue(event.target.value.replace(/\D/g, ""))}
+          onBlur={() => finishEdit(true)}
+          onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); finishEdit(true); } if (event.key === "Escape") finishEdit(false); }} /></span>
+      </label>
+    );
+    return (
+      <button type="button" className="ax-price-pill" data-field={field} disabled={!canPrice} onClick={() => beginEdit(product, field)} aria-label={`Edit ${label.toLowerCase()} for ${product.name}`}>
+        <i>{label}</i><b className="adm-num">{field === "regular" && current.regular == null ? <>{formatBDT(amount)} <small>list</small></> : formatBDT(amount)}</b>
+      </button>
+    );
+  };
+
+  const openTier = (product: ManagedProduct) => {
+    if (!canPrice) return;
+    setTierFor(product.slug);
+    setTierValue(bulkTier(product)?.value ?? "");
+  };
+  const saveTier = (product: ManagedProduct) => {
+    const value = tierValue.trim().slice(0, 40);
+    const label = /bulk|trade|wholesale|tier/i.test(bulkTier(product)?.label ?? "") ? bulkTier(product)!.label : "Bulk price · 10+";
+    const specs = value
+      ? [...product.specs.filter((spec) => !/bulk|trade|wholesale|tier/i.test(spec.label)), { label, value }]
+      : product.specs.filter((spec) => !/bulk|trade|wholesale|tier/i.test(spec.label));
+    store.updateProduct(product.slug, { specs });
+    audit("Updated bulk tier price", product.name, value || "cleared");
+    setTierFor(null);
+    setTierValue("");
+    toast(store.persistError() ?? (value ? "Bulk tier price saved" : "Bulk tier price cleared"));
+  };
+  const tierIndicator = (product: ManagedProduct) => {
+    const tier = bulkTier(product);
+    return <button type="button" className="ax-tier-indicator" data-has-tier={Boolean(tier)} disabled={!canPrice} onClick={() => openTier(product)} title="Set the bulk / trade price shown on the product page">
+      {tier ? <>{tier.label}<span className="adm-num">{tier.value}</span></> : <>No bulk tier <span>Add</span></>}
+    </button>;
+  };
+  const tierEditor = (product: ManagedProduct) => {
+    if (tierFor !== product.slug) return null;
+    return (
+      <form className="ax-tier-editor" onSubmit={(event) => { event.preventDefault(); saveTier(product); }}>
+        <label className="min-w-0 flex-1"><span className="ax-caption">Bulk tier price · e.g. ৳7,900 for 10+</span>
+          <input className="adm-input" autoFocus value={tierValue} maxLength={40} placeholder="৳7,900 for 10+" aria-label={`Bulk tier price for ${product.name}`} onChange={(event) => setTierValue(event.target.value)} />
+        </label>
+        <button type="submit" className="adm-btn" data-variant="primary" data-size="sm">Save tier</button>
+        <button type="button" className="adm-btn" data-size="sm" onClick={() => setTierFor(null)}>Cancel</button>
+      </form>
+    );
+  };
+
+  const stockStepper = (product: ManagedProduct, compact = false) => {
+    const quantity = pending[product.slug]?.stock ?? product.stock;
+    return <div className={`ax-stepper${compact ? " compact" : ""}`} aria-label={`Stock controls for ${product.name}`}>
+      <button type="button" disabled={!canStock || quantity <= 0} aria-label={`Decrease ${product.name} stock`} onClick={() => stageStock(product, quantity - 1)}>−</button>
+      <input inputMode="numeric" aria-label={`Stock count for ${product.name}`} value={quantity} disabled={!canStock}
+        onChange={(event) => { const value = event.target.value.replace(/\D/g, ""); stageStock(product, value === "" ? 0 : Number(value)); }} />
+      <button type="button" disabled={!canStock} aria-label={`Increase ${product.name} stock`} onClick={() => stageStock(product, quantity + 1)}>+</button>
+    </div>;
+  };
+
+  const ProductCard = ({ product }: { product: ManagedProduct }) => {
+    const stock = pending[product.slug]?.stock ?? product.stock;
+    const sale = pending[product.slug]?.salePrice ?? product.price;
+    const tier = bulkTier(product);
+    return (
+      <article className="ax-stock-card" data-pending={pending[product.slug] ? "true" : undefined}>
+        <header className="ax-stock-card-head">
+          <ProductThumb src={product.images?.[0] ?? null} size="lg" />
+          <div className="min-w-0 flex-1"><p className="ax-product-name" title={product.name}>{product.name}</p><p className="ax-product-sku">{product.sku} · {product.brand}</p></div>
+          <CategoryPill product={product} />
+        </header>
+        <div className="ax-stock-price-row">{priceControl(product, "regular")}{priceControl(product, "sale")}</div>
+        <div className="ax-stock-action-row">
+          <div className="ax-stock-count-block"><span className="ax-stock-label">Stock count</span><StockStatus stock={stock} threshold={threshold} /></div>
+          {stockStepper(product)}
+        </div>
+        {tierEditor(product)}
+        <footer className="ax-stock-card-foot">
+          {tierIndicator(product)}
+          {marginAlert(product, sale) ? <span className="ax-margin-alert" title="Estimated cost model from category assumptions">Margin alert</span> : <span className="ax-margin-est" title="Estimated category margin; not product-level COGS">~{Math.max(0, Math.round(((sale - estimatedCost(product)) / Math.max(1, sale)) * 100))}% est. margin</span>}
+        </footer>
+      </article>
+    );
+  };
+
+  const exportRows = () => download(`stock-prices-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(rows.map((product) => ({
+    sku: product.sku, product: product.name, category: store.tables.categories.find((entry) => entry.slug === product.categorySlug)?.name ?? product.categorySlug,
+    regularPrice: product.compareAtPrice ?? product.price, salePrice: product.price, stock: product.stock,
+    marginAlert: marginAlert(product) ? "yes · modelled" : "no · modelled", bulkTier: bulkTier(product)?.value ?? "",
+  }))));
 
   return (
     <>
-      <div>
-        <h1 className="adm-page-title">Customers</h1>
-        <p className="text-[0.78rem] text-[#6e6e73]">Built from order history — phone number is the identity key.</p>
-      </div>
-
-      <div className="adm-kpis">
-        <Stat label="Customers" value={String(customers.length)} hint="unique numbers" icon={<Users size={16} />} />
-        <Stat label="Repeat buyers" value={String(repeat.length)} hint={`${customers.length ? Math.round((repeat.length / customers.length) * 100) : 0}% of base`} tone="emerald" />
-        <Stat label="Lifetime value" value={formatBDT(lifetime)} hint="all recorded orders" tone="sky" />
-        <Stat label="Avg per customer" value={formatBDT(customers.length ? Math.round(lifetime / customers.length) : 0)} tone="amber" />
-      </div>
+      <PageHead title="Stock & prices" subtitle={`${all.length} SKUs · ${counts.low} low stock · ${counts.out} out · ${counts.margin} modelled margin alerts`}
+        actions={<Button size="sm" variant="ghost" onClick={exportRows}><Download size={13} /> Export CSV</Button>} />
+      {!canStock && !canPrice && <ReadOnlyNote>View only — your role cannot change stock or pricing.</ReadOnlyNote>}
 
       <Panel>
-        <div className="relative">
-          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8e8e93]" />
-          <input className="adm-input pl-8" placeholder="Search name or phone…" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search customers" />
-        </div>
-      </Panel>
-
-      <Panel>
-        {filtered.length === 0 ? (
-          <Empty icon={<Users size={22} />} title="No customers match" />
-        ) : (
-          <div className="adm-table-wrap">
-            <table className="adm-table">
-              <thead><tr><th>Customer</th><th className="text-right">Orders</th><th className="text-right">Spend</th><th className="text-right">Last order</th><th /></tr></thead>
-              <tbody>
-                {filtered.map((customer) => (
-                  <tr key={customer.phone}>
-                    <td>
-                      <p className="font-medium">{customer.name}</p>
-                      <p className="adm-num text-[0.68rem] text-[#6e6e73]">{customer.phone}</p>
-                    </td>
-                    <td className="adm-num text-right">{customer.orders} {customer.orders > 1 && <Badge tone="emerald" className="ml-1">repeat</Badge>}</td>
-                    <td className="adm-num text-right font-semibold">{formatBDT(customer.spend)}</td>
-                    <td className="text-right text-[0.72rem] text-[#6e6e73]">{formatDate(customer.last)}</td>
-                    <td className="text-right">
-                      <a className="adm-btn" data-size="sm" href={`https://wa.me/88${customer.phone.replace(/^0/, "")}`} target="_blank" rel="noreferrer">WhatsApp</a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="ax-stock-toolbar">
+          <div className="relative min-w-0 flex-1">
+            <Barcode size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--adm-faint)]" />
+            <input className="adm-input pl-9" placeholder="Scan barcode or search SKU / product…" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Barcode, SKU or product search" />
           </div>
-        )}
+          <select className="adm-select ax-stock-category" value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filter by category">
+            <option value="all">All categories</option>{categories.map((entry) => <option key={entry.slug} value={entry.slug}>{entry.name}</option>)}
+          </select>
+        </div>
+        <div className="ax-seg wrap mt-3" role="tablist" aria-label="Warehouse filters">
+          {FILTERS.map((entry) => <button key={entry.id} type="button" role="tab" aria-selected={filter === entry.id} data-active={filter === entry.id} onClick={() => setFilter(entry.id)}>{entry.label}<span className="ax-seg-count">{counts[entry.id]}</span></button>)}
+        </div>
+        <p className="ax-margin-disclaimer">Margin alerts use category-level cost assumptions, not item COGS. Add real costs before treating them as accounting figures.</p>
       </Panel>
-      <p className="flex items-center gap-1.5 text-[0.72rem] text-[#6e6e73]"><Check size={12} /> Export the orders CSV for a full customer list with addresses.</p>
-      <button type="button" className="sr-only" onClick={() => toast("")}>noop</button>
+
+      <Panel>
+        {rows.length === 0 ? <Empty icon={<Boxes size={22} />} title="Nothing in this queue" body="Try another filter or scan a different SKU." /> : <>
+          <div className="hidden lg:block adm-table-wrap"><table className="adm-table ax-stock-table">
+            <thead><tr><th>Product</th><th>Price / sale</th><th>Count</th><th>Status</th><th>Bulk tier</th><th>Margin</th></tr></thead>
+            <tbody>{rows.map((product) => {
+              const stock = pending[product.slug]?.stock ?? product.stock;
+              const sale = pending[product.slug]?.salePrice ?? product.price;
+              return <tr key={product.slug} data-pending={pending[product.slug] ? "true" : undefined}>
+                <td><div className="ax-stock-product"><ProductThumb src={product.images?.[0] ?? null} size="sm" /><span className="min-w-0"><b className="ax-product-name" title={product.name}>{product.name}</b><small className="ax-product-sku">{product.sku}</small><span className="mt-1 block"><CategoryPill product={product} /></span></span></div></td>
+                <td><div className="ax-stock-price-row compact">{priceControl(product, "regular")}{priceControl(product, "sale")}</div></td>
+                <td>{stockStepper(product, true)}</td>
+                <td><StockStatus stock={stock} threshold={threshold} /></td>
+                <td>{tierIndicator(product)}{tierEditor(product)}</td>
+                <td>{marginAlert(product, sale) ? <span className="ax-margin-alert">Alert</span> : <span className="ax-margin-est">~{Math.max(0, Math.round(((sale - estimatedCost(product)) / Math.max(1, sale)) * 100))}%</span>}</td>
+              </tr>;
+            })}</tbody>
+          </table></div>
+          <div className="ax-stock-mobile lg:hidden">{rows.map((product) => <ProductCard key={product.slug} product={product} />)}</div>
+        </>}
+      </Panel>
+
+      {dirtyCount > 0 && <div className="ax-savebar" role="status" aria-live="polite">
+        <span><b>{dirtyCount}</b> {dirtyCount === 1 ? "product changed" : "products changed"}</span>
+        <button type="button" className="ax-savebar-discard" onClick={() => setPending({})}>Discard</button>
+        <button type="button" className="ax-savebar-save" disabled={!canStock && !canPrice} onClick={save}>Save {dirtyCount} {dirtyCount === 1 ? "change" : "changes"}</button>
+      </div>}
     </>
   );
 }

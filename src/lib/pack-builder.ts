@@ -1,3 +1,5 @@
+import { compatibilityMatch } from "@/lib/compatibility-tags";
+
 /** Shared, deterministic custom-pack quote. The server recalculates every order. */
 export type CellId = "18650" | "21700" | "lifepo4-32700";
 export type Chemistry = "li-ion" | "lifepo4";
@@ -26,6 +28,8 @@ export type PackCatalogEntry = {
   specs?: { label: string; value: string }[];
   badge?: string | null;
   visible?: boolean;
+  /** Optional merchant-curated tags used for Builder add-on discovery. */
+  compatibilityTags?: string[];
 };
 export type PackComponentKind = "cells" | "bms" | "assembly" | "labour" | "testing" | "balance" | "charger" | "safety";
 export type PackComponent = {
@@ -601,7 +605,21 @@ export function suggestPackProducts(result: PackResult, products: PackCatalogEnt
   if ((config.cellId === "lifepo4-32700" && config.series === 8) || (config.cellId !== "lifepo4-32700" && config.series === 7)) {
     add("pure-sine-inverter-1kva-24v", "24V inverter; confirm low-voltage cut-off with the workshop.", "charger");
   }
-  return suggestions.slice(0, 4);
+
+  /* Merchant-tagged products join the Builder only when a curated tag matches
+     the selected chemistry, cell, series / parallel count or pack voltage. */
+  const curated = new Set(suggestions.map((entry) => entry.product.slug));
+  const tagged = products.flatMap((product) => {
+    if (product.visible === false || product.stock < 1 || excluded.has(product.slug) || curated.has(product.slug)) return [];
+    const tag = compatibilityMatch(product.compatibilityTags ?? [], config);
+    if (!tag) return [];
+    const kind: PackSuggestion["kind"] =
+      product.categorySlug === "bms-circuits" ? "bms"
+        : product.categorySlug === "ups-power" ? "charger"
+          : product.categorySlug === "battery-packs" ? "assembly" : "safety";
+    return [{ product, reason: `Builder compatibility: ${tag}.`, kind }];
+  });
+  return [...tagged.slice(0, 2), ...suggestions.filter((entry) => !tagged.some((match) => match.product.slug === entry.product.slug))].slice(0, 4);
 }
 
 export const PACK_ASSEMBLY_NOTE = "All dimensions and electrical values are estimates. The workshop must confirm the load, protection settings, charger and enclosure before assembly.";

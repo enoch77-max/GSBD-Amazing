@@ -53,19 +53,22 @@ export function ProductActions({ product }: { product: Product }) {
   return (
     <>
       <div className="mt-3" data-main-buy-panel>
-        <div ref={inlineActionsRef} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
-          <div className="flex h-11 items-center rounded-full border border-line bg-cream">
-            <button type="button" disabled={qty <= 1 || soldOut} onClick={() => setQty((value) => Math.max(1, value - 1))} aria-label="Decrease quantity" className="grid size-9 place-items-center rounded-full disabled:opacity-30"><Minus size={13} /></button>
-            <span className="w-5 text-center text-xs font-semibold tabular-nums" aria-live="polite">{qty}</span>
-            <button type="button" disabled={qty >= maxQty || soldOut} onClick={() => setQty((value) => Math.min(maxQty, value + 1))} aria-label="Increase quantity" className="grid size-9 place-items-center rounded-full disabled:opacity-30"><Plus size={13} /></button>
+        {/* One compact row: quantity, add, wishlist — then the primary buy action. */}
+        <div ref={inlineActionsRef} className="pq-actions">
+          <div className="sticky-qty flex h-11 items-center rounded-xl border border-[var(--pq-line,#dfe4e9)] bg-white">
+            <button type="button" disabled={qty <= 1 || soldOut} onClick={() => setQty((value) => Math.max(1, value - 1))} aria-label="Decrease quantity" className="grid size-10 place-items-center disabled:opacity-30"><Minus size={13} /></button>
+            <span className="w-6 text-center text-sm font-semibold tabular-nums" aria-live="polite">{qty}</span>
+            <button type="button" disabled={qty >= maxQty || soldOut} onClick={() => setQty((value) => Math.min(maxQty, value + 1))} aria-label="Increase quantity" className="grid size-10 place-items-center disabled:opacity-30"><Plus size={13} /></button>
           </div>
-          <button type="button" onClick={add} disabled={soldOut} className={cn("btn btn-primary min-h-11 min-w-0 gap-1.5 px-2.5 py-3 text-[0.8rem]", added && "is-added")}>{added ? <><Check size={15} /> Added</> : soldOut ? "Sold out" : <><ShoppingBag size={15} /> Add to bag</>}</button>
-          <WishlistButton slug={product.slug} className="size-11" />
+          <button type="button" onClick={add} disabled={soldOut} className="pq-add" data-added={added || undefined}>
+            {added ? <><Check size={15} /> Added</> : soldOut ? "Sold out" : <><ShoppingBag size={15} /> Add to bag</>}
+          </button>
+          <WishlistButton slug={product.slug} className="pq-wish" />
         </div>
         {soldOut ? (
           <a href={restockLink} target="_blank" rel="noreferrer" className="btn btn-outline mt-2 min-h-11 w-full text-[0.8rem]">Ask about restock</a>
         ) : (
-          <button type="button" onClick={buyNow} disabled={buying} className="btn btn-buy mt-2 min-h-11 w-full text-[0.84rem]">
+          <button type="button" onClick={buyNow} disabled={buying} className="pq-buynow mt-2 w-full">
             {buying ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />} Buy now · {formatBDT(product.price * qty)}
           </button>
         )}

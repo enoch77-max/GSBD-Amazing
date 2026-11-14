@@ -14,7 +14,9 @@
     "server:test": "node --test backend/dist/api.test.mjs",
     "server:test:features": "node --test backend/dist/features.test.mjs",
     "server:test:production": "node --test backend/dist/production-security.test.mjs",
-    "server:cli": "node backend/dist/cli.mjs"
+    "server:cli": "node backend/dist/cli.mjs",
+    "start": "next start",
+    "typegen": "next typegen"
   },
   "dependencies": {
     "@types/pg": "^8.18.0",
@@ -25,6 +27,7 @@
     "lucide-react": "^1.71.0",
     "next": "file:compat/next",
     "pg": "^8.20.0",
+    "puppeteer": "^25.17.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "tailwind-merge": "3.4.0"

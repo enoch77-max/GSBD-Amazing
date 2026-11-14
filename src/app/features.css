@@ -607,8 +607,8 @@
 
 /* Advisor: one line per insight, details on demand, one-tap fix */
 .builder-advisor { display: grid; gap: .35rem; margin: .8rem 0 0; padding: 0; list-style: none; }
-.builder-advisor li { display: flex; align-items: flex-start; gap: .5rem; padding: .45rem .5rem; background: #f8fafb; border: 1px solid #e2e7eb; border-left: 3px solid #7fb34f; border-radius: .5rem; }
-.builder-advisor li[data-tone="warn"] { border-left-color: #d49a2a; background: #fffcf4; }
+.builder-advisor li { display: flex; align-items: flex-start; gap: .5rem; padding: .45rem .5rem; background: #f8fafb; border: 1px solid #e2e7eb; border-radius: .5rem; }
+.builder-advisor li[data-tone="warn"] { background: #fffcf4; }
 .builder-advisor-icon { display: grid; flex: none; place-items: center; width: 1.5rem; height: 1.5rem; color: #4b7c3d; background: #edf5e3; border-radius: .4rem; }
 .builder-advisor li[data-tone="warn"] .builder-advisor-icon { color: #a46a0c; background: #fbf0d9; }
 .builder-advisor details { flex: 1; min-width: 0; padding-top: .18rem; }

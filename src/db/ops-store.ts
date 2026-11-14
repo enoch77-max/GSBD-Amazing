@@ -13,6 +13,7 @@
 import { mergeSettings, type StoreSettings } from "@/lib/settings";
 import { DEFAULT_PROMOS, replacePromos, type Promo } from "@/lib/commerce";
 import { sanitizePermissions, type AdminRole } from "@/lib/admin-access";
+import { DEFAULT_PACK_AI, sanitizePackAi, type PackAiConsole } from "@/lib/pack-ai-console";
 
 export type AdminUser = {
   id: string;
@@ -61,7 +62,36 @@ export type OrderPatch = {
   codStrikes?: number;
   otpVerified?: boolean;
   refundAmount?: number;
+  /** Electronics traceability: serial / batch numbers handed to the courier. */
+  serials?: string[];
+  /** Carrier tracking number typed from the courier portal. */
+  trackingNumber?: string;
+  /** Manual fulfilment hold with the reason shown in the Hold / Issue queue. */
+  hold?: { on: boolean; reason?: string; at: string };
+  /** Warranty / RMA claim opened after delivery. */
+  warranty?: { status: "open" | "resolved"; issue: string; openedAt: string; resolvedAt?: string };
+  fulfilledAt?: string;
 };
+
+/** Growth campaign controls owned by the console (not by the ad platform). */
+export type CampaignChannel = "google" | "meta" | "tiktok" | "carts" | "upsell";
+export type CampaignState = { active: boolean; dailyBudget: number };
+/** Personal console preferences (per browser staff account). */
+export type AccountPrefs = {
+  theme: "light" | "dark" | "system";
+  notifyHighValue: boolean;
+  notifyLowStock: boolean;
+  notifyNewOrder: boolean;
+  notifyWeeklySummary: boolean;
+  notifySound: boolean;
+  twoFactor: boolean;
+};
+export const DEFAULT_ACCOUNT_PREFS: AccountPrefs = {
+  theme: "system", notifyHighValue: true, notifyLowStock: true, notifyNewOrder: true,
+  notifyWeeklySummary: false, notifySound: false, twoFactor: false,
+};
+export type ReviewMeta = { reply?: string; repliedAt?: string; flagged?: boolean; flaggedReason?: string; flaggedAt?: string };
+export type CustomerSegment = "vip" | "builder" | "wholesale" | "regular";
 
 export type Attribution = {
   source: string;
@@ -137,6 +167,16 @@ export type OpsState = {
   adminAuth: AdminAuth;
   /** Show the generated demo order book. Real orders are unaffected. */
   sampleData: boolean;
+  /** Owner replies and flags raised from the review moderation queue. */
+  reviewMeta: Record<string, ReviewMeta>;
+  /** Manual customer segment overrides; otherwise derived from order history. */
+  customerSegments: Record<string, CustomerSegment>;
+  /** Battery Pack Builder AI console rules (chemistries, guardrails, add-on recipes). */
+  packAi: PackAiConsole;
+  /** Live/pause + daily budget for each growth channel. */
+  campaigns: Record<CampaignChannel, CampaignState>;
+  /** Personal account preferences (theme, notifications, 2FA). */
+  account: AccountPrefs;
 };
 
 const KEY = "gsbd.ops.v1";
@@ -165,6 +205,17 @@ function emptyState(): OpsState {
     promos: null,
     adminAuth: { pinHash: null, failures: 0, lockedUntil: null, changedAt: null },
     sampleData: true,
+    reviewMeta: {},
+    customerSegments: {},
+    packAi: DEFAULT_PACK_AI,
+    campaigns: {
+      google: { active: true, dailyBudget: 1200 },
+      meta: { active: true, dailyBudget: 2400 },
+      tiktok: { active: false, dailyBudget: 600 },
+      carts: { active: true, dailyBudget: 0 },
+      upsell: { active: true, dailyBudget: 0 },
+    },
+    account: { ...DEFAULT_ACCOUNT_PREFS },
   };
 }
 
@@ -214,6 +265,25 @@ function hydrate(): OpsState {
         ...(saved.adminAuth && typeof saved.adminAuth === "object" ? saved.adminAuth : {}),
       },
       sampleData: saved.sampleData ?? true,
+      reviewMeta: saved.reviewMeta && typeof saved.reviewMeta === "object" ? saved.reviewMeta : {},
+      customerSegments: saved.customerSegments && typeof saved.customerSegments === "object" ? saved.customerSegments : {},
+      packAi: sanitizePackAi(saved.packAi),
+      campaigns: {
+        google: { active: saved.campaigns?.google?.active !== false, dailyBudget: Math.max(0, Math.round(Number(saved.campaigns?.google?.dailyBudget ?? 1200)) || 0) },
+        meta: { active: saved.campaigns?.meta?.active !== false, dailyBudget: Math.max(0, Math.round(Number(saved.campaigns?.meta?.dailyBudget ?? 2400)) || 0) },
+        tiktok: { active: saved.campaigns?.tiktok?.active === true, dailyBudget: Math.max(0, Math.round(Number(saved.campaigns?.tiktok?.dailyBudget ?? 600)) || 0) },
+        carts: { active: saved.campaigns?.carts?.active !== false, dailyBudget: 0 },
+        upsell: { active: saved.campaigns?.upsell?.active !== false, dailyBudget: 0 },
+      },
+      account: {
+        theme: ["light", "dark", "system"].includes(String(saved.account?.theme)) ? saved.account!.theme! : "system",
+        notifyHighValue: saved.account?.notifyHighValue !== false,
+        notifyLowStock: saved.account?.notifyLowStock !== false,
+        notifyNewOrder: saved.account?.notifyNewOrder !== false,
+        notifyWeeklySummary: saved.account?.notifyWeeklySummary === true,
+        notifySound: saved.account?.notifySound === true,
+        twoFactor: saved.account?.twoFactor === true,
+      },
     };
   } catch (error) {
     console.warn("[ops] could not restore state", error);

@@ -84,6 +84,22 @@ export type StoreSettings = {
     apiSecret: string;
     autoBook: boolean;
   };
+  /** Lithium shipping compliance and checkout tax rules. */
+  compliance: {
+    /** Lithium cells are class 9 dangerous goods; carriers restrict air and require labels. */
+    hazmatEnabled: boolean;
+    surfaceOnly: boolean;
+    unNumber: string;
+    maxCellsPerParcel: number;
+    declareWattHours: boolean;
+    requireConsignmentNote: boolean;
+    taxEnabled: boolean;
+    taxLabel: string;
+    taxPercent: number;
+    taxInclusive: boolean;
+    lowStockThreshold: number;
+    lowStockDailyDigest: boolean;
+  };
   /** Smart "recommended" capsule shown on pack-builder suggestions. */
   packRecommendations: PackRecommendationSettings;
 };
@@ -145,6 +161,20 @@ export const DEFAULT_SETTINGS: StoreSettings = {
     smsSenderId: "GLOWINGSPACE",
   },
   courier: { provider: "manual", apiKey: "", apiSecret: "", autoBook: false },
+  compliance: {
+    hazmatEnabled: true,
+    surfaceOnly: true,
+    unNumber: "UN3480",
+    maxCellsPerParcel: 120,
+    declareWattHours: true,
+    requireConsignmentNote: true,
+    taxEnabled: false,
+    taxLabel: "VAT",
+    taxPercent: 0,
+    taxInclusive: true,
+    lowStockThreshold: 6,
+    lowStockDailyDigest: true,
+  },
   packRecommendations: structuredClone(DEFAULT_PACK_RECOMMENDATIONS),
 };
 

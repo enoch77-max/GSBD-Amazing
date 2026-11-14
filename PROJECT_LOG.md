@@ -2,7 +2,7 @@
 
 - **Repository**: [https://github.com/enoch77-max/GSBD-Amazing](https://github.com/enoch77-max/GSBD-Amazing)
 - **Local Directory**: `D:\Websites\Website designs\E-commerce\GSBD-Amazing`
-- **Visibility**: Private
+- **Visibility**: Public
 - **Production Branch**: `main`
 - **Stack**: React 19, Vite 7, Next.js Compatibility, Tailwind CSS 4, Drizzle ORM, Embedded Postgres
 
@@ -15,7 +15,25 @@ GSBD-Amazing is a dual-deployment e-commerce platform for Glowing Space BD that 
 
 ## Update & Commit History
 
-### [fb7dedd] — 2026-11-11 22:35:00 (+03:00)
+### [7a8314f] — 2026-11-14 23:49:00 (+03:00)
+- **Archive Source**: `gsbd-amaizing-t1.zip` (Analytics, Command Palette & Product System build)
+- **Type**: Advanced Analytics, Command Palette, Navigation Sheet & Product System Upgrade
+- **Summary**:
+  - Added Advanced Analytics & Metrics Engine (`src/lib/analytics-engine.ts`, `src/lib/admin-metrics.ts`, `admin-analytics.tsx`, `analytics-charts.tsx`).
+  - Implemented Admin Command Palette (`command-palette.tsx`), Navigation Sheet (`navigation-sheet.tsx`), and Quick Action Menus (`action-menu.tsx`).
+  - Refactored settings views into modular components: `settings-activity.tsx`, `settings-store.tsx`, `settings-team.tsx`, and `account-panel.tsx`.
+  - Added Product Presentation & Quality System (`product-system.css`, `admin-shell.css`, `product-presentation.ts`, `product-quality.ts`, `compatibility-tags.ts`, `pack-ai-console.ts`).
+  - Added automated test suites covering navigation sheets, dark mode audits, contact sheets, and phased E2E verification (`scripts/*.mjs`).
+  - Changed repository visibility to Public per user directive.
+  - Preserved all product photos and graphics in `public/images/`.
+
+### [f28e852] — 2026-11-14 23:20:00 (+03:00)
+- **Author**: `enoch77-max`
+- **Type**: Configuration
+- **Summary**:
+  - Temporary visibility update to private during workspace-wide lock.
+
+### [03bb8dd] — 2026-11-11 22:35:24 (+03:00)
 - **Archive Source**: `gsbd-amaizing-t1.zip` (Merchant console & team build)
 - **Type**: Merchant Console, Role-Based Access Control & Operations Suite
 - **Summary**:
@@ -25,7 +43,6 @@ GSBD-Amazing is a dual-deployment e-commerce platform for Glowing Space BD that 
   - Enhanced Owner operations dashboard views (`Customers.tsx`, `Growth.tsx`, `Orders.tsx`, `Overview.tsx`, `Products.tsx`, `Settings.tsx`).
   - Added Merchant Console links in storefront header navigation and footer.
   - Added comprehensive documentation in `docs/ADMIN_GUIDE.md` and automated E2E test suite in `scripts/admin-portal-e2e.mjs`.
-  - Preserved all existing product photos and SVG illustrations in `public/images/`.
 
 ### [317fd56] — 2026-11-11 18:44:11 (+03:00)
 - **Archive Source**: `gsbd-amaizing-t1.zip` (Pack matching build)

@@ -1,115 +1,163 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
-import { Check, Minus, Plus, ShoppingBag, Star } from "lucide-react";
-import type { Product } from "@/db/schema";
+import { useEffect, useRef, useState } from "react";
 import { useCart } from "@/lib/cart";
 import { cn, discountPercent, formatBDT } from "@/lib/format";
 import { brandLabel, productLabel } from "@/lib/product-copy";
+import { productImage, productImageSizes } from "@/lib/product-image";
+import { cardMetaLine, genuineConfirmed, specChips } from "@/lib/product-quality";
+import type { Product } from "@/db/schema";
+import { Glyph, CategoryBackdrop, CategoryGlyph } from "@/components/store/store-visuals";
 import { WishlistButton } from "@/components/wishlist-button";
-import { ConfirmRemoveDialog } from "@/components/confirm-remove-dialog";
+import { QuickPreview } from "@/components/store/quick-preview";
 
-export function ProductCard({ product, className, priority = false, elevated = false }: {
+/**
+ * Product card — the whole system in miniature.
+ * Large photo, one-line name, price, at most three trust badges and one add
+ * button. Hovering (pointer) or tapping “Quick details” reveals the real spec
+ * chips and the device-fit verdict without leaving the grid.
+ */
+export function ProductCard({ product, className, priority = false }: {
   product: Product; className?: string; priority?: boolean; elevated?: boolean;
 }) {
   const cart = useCart();
-  const [confirmRemoval, setConfirmRemoval] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [hoverDismissed, setHoverDismissed] = useState(false);
+  const [pop, setPop] = useState(false);
+  const [justAdded, setJustAdded] = useState(false);
+  const popTimer = useRef<number | null>(null);
+  const addedTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (popTimer.current) window.clearTimeout(popTimer.current);
+    if (addedTimer.current) window.clearTimeout(addedTimer.current);
+  }, []);
+
+  const qty = cart.lines.find((line) => line.slug === product.slug)?.qty ?? 0;
   const added = cart.lastAddedSlug === product.slug;
-  const qty = cart.lines.find(line => line.slug === product.slug)?.qty ?? 0;
-  const off = discountPercent(product.price, product.compareAtPrice);
   const soldOut = product.stock <= 0;
-  const low = product.stock > 0 && product.stock <= 10;
-  const image = product.images[0] ?? "/images/col-cells.jpg";
+  const off = discountPercent(product.price, product.compareAtPrice);
   const title = productLabel(product.slug, product.name);
-  // Keep the model name and its spec as separate fields so neither can orphan a separator.
-  const [modelName, modelSpec] = title.split(" · ");
-  const badge = product.badge === "Load-shedding pick" ? "Router backup" : product.badge;
-  const hasCompare = !!product.compareAtPrice && product.compareAtPrice > product.price;
+  const image = productImage(product.images[0], 960);
+  const genuine = genuineConfirmed(product);
+  const metaLine = cardMetaLine(product);
+  const chips = specChips(product, 3);
+  const compareAt = product.compareAtPrice && product.compareAtPrice > product.price ? product.compareAtPrice : null;
 
   function add() {
-    cart.addItem({ id: product.id, slug: product.slug, name: product.name, brand: product.brand, price: product.price, image, stock: product.stock });
+    cart.addItem({ id: product.id, slug: product.slug, name: product.name, brand: product.brand, price: product.price, image: image.src, stock: product.stock });
+    setPop(true);
+    setJustAdded(true);
+    if (popTimer.current) window.clearTimeout(popTimer.current);
+    if (addedTimer.current) window.clearTimeout(addedTimer.current);
+    popTimer.current = window.setTimeout(() => setPop(false), 520);
+    /* Hold the confirmation for a beat, then reveal the stepper — the cart
+       itself updates immediately, this is presentation only. */
+    addedTimer.current = window.setTimeout(() => setJustAdded(false), 1100);
   }
   function decrease() {
-    if (qty <= 1) setConfirmRemoval(true);
+    // Removing is one tap: at one unit, minus removes the line immediately.
+    if (qty <= 1) cart.removeItem(product.slug);
     else cart.updateQty(product.slug, qty - 1);
   }
 
   return (
     <>
-    <article data-tone={product.categorySlug} className={cn("product-card group flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-line bg-cream transition-shadow duration-200 hover:shadow-[var(--shadow-card)]", elevated && "shadow-[var(--shadow-card)]", className)}>
-      <div className="product-media relative aspect-[5/4] overflow-hidden bg-[#f0f2f5]">
-        <Link href={`/product/${product.slug}`} aria-label={product.name} className="absolute inset-0">
-          <Image src={image} alt={product.name} fill priority={priority} sizes="(max-width:640px) 48vw, (max-width:1024px) 32vw, 24vw" className={cn("object-cover transition-transform duration-500 group-hover:scale-[1.04]", soldOut && "opacity-60 saturate-50")} />
-        </Link>
-        <div className="pointer-events-none absolute left-2 right-2 top-2 flex flex-wrap items-start gap-1">
-          {badge && <span className="product-badge rounded-full bg-volt px-2 py-1 text-[0.56rem] font-semibold leading-none text-ink sm:text-[0.62rem]">{badge}</span>}
-          {off && <span className="product-badge rounded-full bg-ember px-2 py-1 text-[0.56rem] font-semibold leading-none text-white sm:text-[0.62rem]">−{off}%</span>}
-        </div>
-        <WishlistButton slug={product.slug} className="absolute bottom-2 right-2 z-10 shadow-sm" label={false} />
-      </div>
+      <article className={cn("pq pq-card", className)} data-cat={product.categorySlug} aria-label={title} onMouseLeave={() => setHoverDismissed(false)}>
+        <div className="pq-media" data-out={soldOut || undefined}>
+          <CategoryBackdrop slug={product.categorySlug} className="pq-backdrop" />
+          <Link href={`/product/${product.slug}`} aria-label={title} className="pq-media-link">
+            <img
+              src={image.src}
+              srcSet={image.srcSet}
+              sizes={productImageSizes.card}
+              width={image.width}
+              height={image.height}
+              alt={product.name}
+              loading={priority ? "eager" : "lazy"}
+              fetchPriority={priority ? "high" : "auto"}
+              decoding="async"
+            />
+          </Link>
+          <div className="pq-media-top">
+            {off ? <span className="pq-flag" data-tone="sale">−{off}%</span> : null}
+            {genuine && <span className="pq-genuine"><Glyph name="shield" size={11} />{genuine}</span>}
+          </div>
 
-      <div className="flex flex-1 flex-col px-3 pb-2.5 pt-2 sm:px-3.5 sm:pb-3">
-        {/* Eyebrow: brand gives the model context; availability sits opposite it. */}
-        <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-muted">{brandLabel(product.brand)}</p>
-          {soldOut ? (
-            <span className="shrink-0 text-[0.6rem] font-medium uppercase tracking-[0.06em] text-muted">Sold out</span>
-          ) : low ? (
-            <span className="shrink-0 text-[0.6rem] font-semibold uppercase tracking-[0.06em] text-ember tabular-nums">{product.stock} left</span>
-          ) : (
-            <span className="size-1.5 shrink-0 rounded-full bg-[#61a83f]" aria-label="In stock" />
-          )}
-        </div>
+          <button
+            type="button"
+            className="pq-quick-btn"
+            aria-expanded={quickOpen || sheetOpen}
+            aria-controls={`quick-${product.slug}`}
+            onClick={() => {
+              if (window.matchMedia("(hover: none)").matches) setSheetOpen(true);
+              else setQuickOpen((value) => !value);
+            }}
+            onBlur={(event) => { if (!event.currentTarget.parentElement?.contains(event.relatedTarget as Node)) setQuickOpen(false); }}
+          >
+            <Glyph name="list" size={14} /><span>Quick look</span>
+          </button>
 
-        {/* Title: the model is the anchor. */}
-        <Link href={`/product/${product.slug}`} title={product.name} className="mt-1 block">
-          <h3 className="line-clamp-2 min-h-[2.2rem] font-sans text-[0.85rem] font-semibold leading-[1.3] tracking-[-0.012em] sm:text-[0.92rem]">
-            {modelName}
-          </h3>
-        </Link>
-
-        {/* One metadata line: spec and social proof together, instead of two sparse rows. */}
-        <div className="mt-1.5 flex items-center gap-1.5 text-[0.69rem] text-muted">
-          {modelSpec && (
-            <>
-              <span className="shrink-0 font-medium text-ink/70 tabular-nums">{modelSpec}</span>
-              <span aria-hidden className="hidden text-line min-[360px]:inline">·</span>
-            </>
-          )}
-          <Star size={11} fill="currentColor" strokeWidth={0} className="shrink-0 text-[#c78c2c]" aria-hidden />
-          <span className="shrink-0 font-semibold text-ink tabular-nums">{product.rating.toFixed(1)}</span>
-          <span className="hidden truncate tabular-nums min-[360px]:inline">({product.reviewCount})</span>
-        </div>
-
-        {/* Price owns its line, with the comparison price adjacent. */}
-        <div className="mt-auto flex flex-wrap items-baseline gap-x-1.5 pt-2.5">
-          <span className="product-price text-[1.1rem] font-bold leading-none tabular-nums tracking-tight sm:text-[1.2rem]">{formatBDT(product.price)}</span>
-          {hasCompare && <span className="text-[0.7rem] tabular-nums text-muted line-through">{formatBDT(product.compareAtPrice!)}</span>}
-        </div>
-
-        {/* Action gets its own dedicated row. */}
-        <div className="mt-2.5">
-          {soldOut ? (
-            <button type="button" disabled aria-label={`${product.name} is out of stock`} className="card-add flex min-h-9 w-full items-center justify-center rounded-full border border-line bg-bone/70 text-[0.78rem] font-semibold text-muted">
-              Out of stock
-            </button>
-          ) : qty > 0 ? (
-            <div className="card-stepper flex min-h-9 items-center justify-between rounded-full px-1">
-              <button type="button" onClick={decrease} aria-label={`Decrease quantity of ${product.name}`} className="grid size-7 place-items-center rounded-full transition-colors hover:bg-white/10"><Minus size={13} /></button>
-              <span className="text-[0.74rem] font-semibold tabular-nums" aria-live="polite">{qty} in bag</span>
-              <button type="button" onClick={add} aria-label={`Increase quantity of ${product.name}`} className="grid size-7 place-items-center rounded-full transition-colors hover:bg-white/10"><Plus size={13} /></button>
+          <div id={`quick-${product.slug}`} className="pq-quick" data-open={quickOpen || undefined} data-hover-closed={hoverDismissed || undefined}>
+            <div className="pq-quick-head">
+              <span>At a glance</span>
+              <button type="button" aria-label={`Close quick details for ${product.name}`} onClick={() => { setQuickOpen(false); setHoverDismissed(true); }}><Glyph name="cross" size={12} /></button>
             </div>
-          ) : (
-            <button type="button" onClick={add} aria-label={`Add ${product.name} to bag`} className={cn("card-add flex min-h-9 w-full items-center justify-center gap-1.5 rounded-full text-[0.78rem] font-semibold", added && "added")}>
-              {added ? <><Check size={14} strokeWidth={3} /> Added</> : <><ShoppingBag size={14} /> Add to bag</>}
-            </button>
-          )}
+            <div className="pq-chips">
+              {chips.map((chip) => <span key={chip.raw.label} className="pq-chip"><span>{chip.label}</span><b>{chip.raw.value}</b></span>)}
+            </div>
+            <Link href={`/product/${product.slug}`} className="pq-quick-link">
+              See photos & full specs <Glyph name="right" size={12} />
+            </Link>
+          </div>
         </div>
-      </div>
-    </article>
-    {confirmRemoval && <ConfirmRemoveDialog name={title} onCancel={() => setConfirmRemoval(false)} onConfirm={() => { cart.removeItem(product.slug); setConfirmRemoval(false); }} />}
+
+        <div className="pq-body">
+          <div className="pq-brand">
+            <CategoryGlyph slug={product.categorySlug} size={12} />
+            <span className="pq-brand-text" title={product.brand}>{brandLabel(product.brand)}</span>
+            {product.reviewCount > 0 && (
+              <span className="pq-rating" title={`${product.rating.toFixed(1)} from ${product.reviewCount} reviews`}>
+                <Glyph name="star" size={11} /> {product.rating.toFixed(1)} ({product.reviewCount})
+              </span>
+            )}
+          </div>
+          <Link href={`/product/${product.slug}`} title={product.name} className="pq-name">{title}</Link>
+
+          {metaLine.length > 0 && (
+            <p className="pq-meta" aria-label="Variant and key specification">
+              {metaLine.map((part, index) => <span key={part}>{index > 0 && <i aria-hidden="true">·</i>}{part}</span>)}
+            </p>
+          )}
+
+          <div className="pq-price-row">
+            <span className="pq-price">{formatBDT(product.price)}</span>
+            {compareAt && <span className="pq-old-price">{formatBDT(compareAt)}</span>}
+            <span className="pq-stock-note" data-low={(product.stock > 0 && product.stock <= 10) || soldOut || undefined}>
+              {soldOut ? "Sold out" : product.stock <= 10 ? `${product.stock} left` : "In stock"}
+            </span>
+          </div>
+
+          <div className="pq-actions">
+            {soldOut ? (
+              <button type="button" disabled className="pq-add">Out of stock</button>
+            ) : qty > 0 && !justAdded ? (
+              <div className="pq-stepper" role="group" aria-label={`Quantity of ${product.name} in bag`}>
+                <button type="button" onClick={decrease} aria-label={`Decrease quantity of ${product.name}`}><Glyph name="minus" size={13} /></button>
+                <output key={qty} aria-live="polite">{qty} in bag</output>
+                <button type="button" onClick={add} aria-label={`Increase quantity of ${product.name}`}><Glyph name="plus" size={13} /></button>
+              </div>
+            ) : (
+              <button type="button" onClick={add} className="pq-add" data-added={justAdded || added || undefined} data-pop={pop || undefined} aria-label={`Add ${product.name} to bag`}>
+                <Glyph name={justAdded || added ? "check" : "bag"} size={14} /> {justAdded || added ? "Added to bag" : "Add to bag"}
+              </button>
+            )}
+            <WishlistButton slug={product.slug} className="pq-wish" label={false} />
+          </div>
+        </div>
+      </article>
+      {sheetOpen && <QuickPreview product={product} onClose={() => setSheetOpen(false)} />}
     </>
   );
 }

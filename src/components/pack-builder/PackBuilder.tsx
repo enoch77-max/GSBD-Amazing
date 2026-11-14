@@ -16,6 +16,7 @@ import { assessPackLoad, findPackAvailability, inventoryForBuild, type CustomAlt
 import { useCart, type CartLine } from "@/lib/cart";
 import { formatBDT } from "@/lib/format";
 import { readAllProducts } from "@/lib/queries";
+import { readCompatibilityTags } from "@/lib/compatibility-tags";
 import { useStoreVersion } from "@/lib/use-store";
 import { STORE } from "@/lib/commerce";
 import { bootLive, isLive } from "@/lib/live";
@@ -115,7 +116,10 @@ export function PackBuilder() {
 
   /* The load drives BMS sizing; in watt mode it is re-derived whenever voltage changes. */
   const config = useMemo(() => withLoad(state.config, load), [state.config, load]);
-  const products = useMemo(() => { void catalogueVersion; void refreshVersion; return readAllProducts(); }, [catalogueVersion, refreshVersion]);
+  const products = useMemo(() => {
+    void catalogueVersion; void refreshVersion;
+    return readAllProducts().map((product) => ({ ...product, compatibilityTags: readCompatibilityTags(product.highlights) }));
+  }, [catalogueVersion, refreshVersion]);
   const catalogue = useMemo(() => inventoryForBuild(products, cart.lines, editingLine?.slug), [products, cart.lines, editingLine?.slug]);
   const buildQuantity = editingLine?.qty ?? 1;
   const result = useMemo(() => calculatePack(config, { products: catalogue }), [config, catalogue]);

@@ -1,8 +1,8 @@
 "use client";
 
 /** Shared primitives for the merchant console: dark instrument-panel styling. */
-import { useEffect, useId, useRef, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Check, X } from "lucide-react";
 import { cn } from "@/lib/format";
 
 export function Panel({ title, subtitle, action, children, className, id }: {
@@ -208,11 +208,11 @@ export function RevenueChart({ data, height = 190 }: { data: SeriesPoint[]; heig
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#65a30d" stopOpacity="0.42" />
             <stop offset="60%" stopColor="#4ea87c" stopOpacity="0.14" />
-            <stop offset="100%" stopColor="#0f2b21" stopOpacity="0" />
+            <stop offset="100%" stopColor="#65a30d" stopOpacity="0" />
           </linearGradient>
         </defs>
         {[0.25, 0.5, 0.75, 1].map((fraction) => (
-          <line key={fraction} x1={pad.left} x2={width - pad.right} y1={pad.top + innerH * (1 - fraction)} y2={pad.top + innerH * (1 - fraction)} stroke="#1e3a2e" strokeWidth="1" strokeDasharray="3 5" />
+          <line key={fraction} x1={pad.left} x2={width - pad.right} y1={pad.top + innerH * (1 - fraction)} y2={pad.top + innerH * (1 - fraction)} stroke="#ececf0" strokeWidth="1" />
         ))}
         <path d={area} fill={`url(#${gradientId})`} />
         <path d={line("revenue")} fill="none" stroke="#65a30d" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
@@ -220,13 +220,13 @@ export function RevenueChart({ data, height = 190 }: { data: SeriesPoint[]; heig
         {data.map((point, index) => (
           <g key={point.label} className="adm-chart-hit">
             <rect x={x(index) - innerW / (data.length * 2)} y={pad.top} width={innerW / data.length} height={innerH} fill="transparent" />
-            <circle cx={x(index)} cy={y(point.revenue)} r="3" fill="#f5f5f7" stroke="#65a30d" strokeWidth="2" className="adm-chart-dot" />
+            <circle cx={x(index)} cy={y(point.revenue)} r="3" fill="#ffffff" stroke="#65a30d" strokeWidth="2" className="adm-chart-dot" />
             <title>{`${point.label} · revenue ৳${point.revenue.toLocaleString("en-IN")} · spend ৳${point.spend.toLocaleString("en-IN")} · ${point.orders} orders`}</title>
           </g>
         ))}
         {data.map((point, index) =>
           index % Math.ceil(data.length / 7) === 0 ? (
-            <text key={`t-${point.label}`} x={x(index)} y={height - 8} textAnchor="middle" className="adm-chart-axis">{point.label}</text>
+            <text key={`t-${point.label}`} x={x(index)} y={height - 8} textAnchor={index === 0 ? "start" : index === data.length - 1 ? "end" : "middle"} className="adm-chart-axis">{point.label}</text>
           ) : null,
         )}
       </svg>
@@ -270,7 +270,7 @@ export function Donut({ slices, total, caption }: { slices: Array<{ label: strin
   return (
     <div className="adm-donut">
       <svg viewBox="0 0 140 140" className="size-[140px] shrink-0" role="img" aria-label={caption}>
-        <circle cx="70" cy="70" r={radius} fill="none" stroke="#163025" strokeWidth="16" />
+        <circle cx="70" cy="70" r={radius} fill="none" stroke="#f2f2f7" strokeWidth="16" />
         {slices.map((slice) => {
           const length = (slice.value / sum) * circumference;
           const element = (
@@ -302,5 +302,38 @@ export function Donut({ slices, total, caption }: { slices: Array<{ label: strin
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * Destructive action guard: the first click arms the button, the second
+ * commits. Auto-disarms after 5s and can be cancelled, so an accidental click
+ * on "Restore defaults" never wipes a store's configuration.
+ */
+export function ConfirmButton({ children, confirmLabel = "Click again to confirm", onConfirm, variant = "danger", size = "md", className, disabled }: {
+  children: ReactNode; confirmLabel?: string; onConfirm: () => void;
+  variant?: "default" | "primary" | "accent" | "ghost" | "danger"; size?: "sm" | "md"; className?: string; disabled?: boolean;
+}) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const timer = window.setTimeout(() => setArmed(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [armed]);
+  return (
+    <span className="adm-confirm" data-armed={armed}>
+      {armed ? (
+        <>
+          <Button variant={variant} size={size} className={className} onClick={() => { setArmed(false); onConfirm(); }} autoFocus>
+            <Check size={13} /> {confirmLabel}
+          </Button>
+          <button type="button" className="adm-confirm-cancel" onClick={() => setArmed(false)}>Cancel</button>
+        </>
+      ) : (
+        <Button variant={variant} size={size} className={className} disabled={disabled} onClick={() => setArmed(true)} aria-live="polite">
+          {children}
+        </Button>
+      )}
+    </span>
   );
 }

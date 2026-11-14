@@ -11,7 +11,7 @@
  * Settings → Danger zone clears them permanently; real orders are never touched.
  */
 import type { Order, OrderItem } from "./schema";
-import type { Attribution, OrderEvent, OrderPatch, OrderStatus, PaymentStatus } from "./ops-store";
+import type { Attribution, OrderEvent, OrderPatch, OrderStatus, PaymentStatus, TrackedEvent } from "./ops-store";
 import { buildProductSeeds } from "./seed-data";
 import { deliveryPrice } from "@/lib/commerce";
 
@@ -244,7 +244,13 @@ export function sampleTrading(): SampleTrading {
         fbclid: channel.flag === "fbclid",
         gclid: channel.flag === "gclid",
         ttclid: channel.flag === "ttclid",
-        landingPage: random() < 0.5 ? "/" : `/product/${lines[0].slug}`,
+        landingPage: (() => {
+          /* Deterministic, no extra RNG draw: pack-shaped baskets (cells + BMS /
+             balancer / pack parts) every third order came through the builder. */
+          const fallback = random() < 0.5 ? "/" : `/product/${lines[0].slug}`;
+          const packy = lines.some((line) => /18650|21700|26650|lifepo4|cell|bms|balancer|pack/i.test(line.slug));
+          return packy && orderId % 3 === 0 ? "/pack-builder" : fallback;
+        })(),
         referrer: channel.source === "facebook" ? "https://facebook.com/" : channel.source === "google" ? "https://google.com/" : "",
         firstSeen: createdAt.toISOString(),
         sessionId: `s${orderId}`,
@@ -294,4 +300,70 @@ export function sampleSpend(): Array<{ date: string; channel: string; amount: nu
 
 export function isSampleOrder(orderNumber: string): boolean {
   return orderNumber in sampleTrading().patches;
+}
+
+/**
+ * Deterministic sample of storefront tracking events (PageView → Purchase),
+ * scaled to the same volume model as the sample order book, so the analytics
+ * funnel and conversion rates read realistically when sample history is on.
+ * Real `track()` events from the operator's own browsing are merged on top.
+ */
+let eventsCache: TrackedEvent[] | null = null;
+
+export function sampleEvents(): TrackedEvent[] {
+  if (eventsCache) return eventsCache;
+  const random = rng(424242);
+  const events: TrackedEvent[] = [];
+  const now = Date.now();
+  const DAYS = 42;
+  const catalogue = buildProductSeeds().filter((seed) => seed.slug !== "custom-battery-pack-service");
+
+  const push = (sessionId: string, at: Date, name: TrackedEvent["name"], params: Record<string, unknown> = {}) => {
+    events.push({
+      id: `${sessionId}-${name}-${events.length}`,
+      at: at.toISOString(),
+      name,
+      params,
+      destinations: ["local"],
+      consent: true,
+      sessionId,
+    });
+  };
+
+  for (let day = DAYS - 1; day >= 0; day -= 1) {
+    const date = new Date(now - day * 86400000);
+    const weekday = date.getDay();
+    const seasonal = weekday === 5 ? 0.5 : weekday === 6 ? 1.25 : 1;
+    const payday = date.getDate() <= 7 ? 1.2 : 1;
+    const trend = 1 + ((DAYS - day) / DAYS) * 0.6;
+    const sessions = Math.max(4, Math.round(26 * trend * seasonal * payday + (random() - 0.5) * 8));
+
+    for (let s = 0; s < sessions; s += 1) {
+      const sessionId = `sample-${day}-${s}`;
+      const at = new Date(date.getTime());
+      at.setHours(8 + Math.floor(random() * 14), Math.floor(random() * 60), 0, 0);
+      if (at.getTime() > now) continue;
+      push(sessionId, at, "PageView", { page_path: random() < 0.45 ? "/" : random() < 0.7 ? "/shop" : "/pack-builder" });
+      const roll = random();
+      let product: (typeof catalogue)[number] | null = null;
+      if (roll < 0.62) {
+        product = catalogue[Math.floor(random() * catalogue.length)];
+        push(sessionId, at, "ViewContent", { content_ids: [product.slug], content_name: product.name, value: product.price });
+      }
+      if (roll < 0.45) push(sessionId, at, "Search", { search_string: ["bms", "18650", "inverter", "balancer", "lifepo4"][Math.floor(random() * 5)] });
+      if (roll < 0.34) {
+        const value = product ? product.price * (1 + Math.floor(random() * 2)) : 800;
+        push(sessionId, at, "AddToCart", { value, num_items: 1, content_ids: product ? [product.slug] : [] });
+      }
+      if (roll < 0.22) push(sessionId, at, "InitiateCheckout", { value: product ? product.price : 1500, num_items: 1 });
+      if (roll < 0.16) push(sessionId, at, "AddPaymentInfo", { payment_method: random() < 0.6 ? "cod" : "bkash" });
+      if (roll < 0.11) {
+        const value = Math.round(600 + random() * 9000);
+        push(sessionId, at, "Purchase", { value, currency: "BDT", order_id: `GSBD-${9000 + Math.floor(random() * 220)}`, num_items: 1 + Math.floor(random() * 3) });
+      }
+    }
+  }
+
+  eventsCache = events;
+  return events;
 }

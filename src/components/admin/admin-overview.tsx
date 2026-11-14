@@ -1,203 +1,218 @@
 "use client";
 
+/**
+ * Overview — the daily pulse. Four numbers that change what you do today, a
+ * prioritised action list with one-tap fixes, and the latest orders. Anything
+ * that is a report rather than a to-do lives in Analytics.
+ */
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowUpRight, Boxes, CircleDollarSign, PackageCheck, Percent, ShoppingCart, TrendingUp, Truck, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, BatteryWarning, ChevronRight, CircleDollarSign, Package, PackageCheck, Send, ShieldAlert, ShoppingCart, Zap } from "lucide-react";
 import { ops } from "@/db/ops-store";
 import { readinessAudit } from "@/lib/settings";
-import { formatBDT, formatDate } from "@/lib/format";
-import {
-  channelReport, computeKpis, dailySeries, listOrders, lowStock, topProducts, inventoryValue,
-  STATUS_META, type MerchantOrder,
-} from "@/lib/ops";
-import { Badge, BarList, Button, CHART_HUES, Donut, Empty, Panel, RevenueChart, Stat } from "./admin-ui";
+import { formatBDT, timeAgo } from "@/lib/format";
+import { flushOutbox, listOrders, lowStock, queueAbandonedCart, STATUS_META, type MerchantOrder } from "@/lib/ops";
+import { categoryOf, EARNING, isBuilderOrder, pctChange, UNFULFILLED } from "@/lib/admin-metrics";
+import { PageHead } from "./admin-ui";
 
-const RANGES = [
-  { id: 7, label: "7 days" },
-  { id: 14, label: "14 days" },
-  { id: 30, label: "30 days" },
-];
+type Tone = "rose" | "amber" | "sky" | "emerald";
+type Task = { id: string; tone: Tone; icon: React.ReactNode; title: string; meta: string; action: string; run: () => void; open: () => void };
 
-export function AdminOverview({ onNavigate, onOpenOrder }: { onNavigate: (tab: string) => void; onOpenOrder: (order: MerchantOrder) => void }) {
-  const [days, setDays] = useState(14);
-  const orders = useMemo(() => listOrders(), []);
-  const settings = ops.state.settings;
+export function TrendPill({ value, suffix = "%", invert = false, label }: { value: number | null; suffix?: string; invert?: boolean; label?: string }) {
+  if (value === null) return <span className="ax-pill" data-tone="neutral">new</span>;
+  const rounded = Math.round(value);
+  const good = invert ? rounded <= 0 : rounded >= 0;
+  return (
+    <span className="ax-pill" data-tone={rounded === 0 ? "neutral" : good ? "up" : "down"} title={label}>
+      {rounded > 0 ? "+" : rounded < 0 ? "−" : "±"}{Math.abs(rounded)}{suffix}
+    </span>
+  );
+}
 
-  const { current, previous, series, channels, products, issues, stock } = useMemo(() => {
-    const now = new Date();
-    const from = new Date(now.getTime() - days * 86400000);
-    const prevFrom = new Date(now.getTime() - days * 2 * 86400000);
-    return {
-      current: computeKpis(orders, from, now),
-      previous: computeKpis(orders, prevFrom, from),
-      series: dailySeries(orders, days),
-      channels: channelReport(orders, days),
-      products: topProducts(orders, 5),
-      issues: readinessAudit(settings),
-      stock: lowStock(),
-    };
-  }, [orders, days, settings]);
+function startOfToday() { const date = new Date(); date.setHours(0, 0, 0, 0); return date.getTime(); }
 
-  const delta = (now: number, before: number) => (before > 0 ? ((now - before) / before) * 100 : now > 0 ? 100 : 0);
-  const blockers = issues.filter((issue) => issue.severity === "blocker");
-  const recent = orders.slice(0, 6);
-  const statusCounts = (["pending", "confirmed", "packing", "shipped", "delivered", "cancelled"] as const).map((status, index) => ({
-    label: STATUS_META[status].label,
-    value: orders.filter((order) => order.status === status).length,
-    color: CHART_HUES[index % CHART_HUES.length],
-  })).filter((slice) => slice.value > 0);
+export function AdminOverview({ onNavigate, onOpenOrder, toast }: {
+  onNavigate: (dest: string, sub?: string) => void;
+  onOpenOrder: (order: MerchantOrder) => void;
+  toast: (message: string) => void;
+}) {
+  const [version, setVersion] = useState(0);
+
+  const data = useMemo(() => {
+    void version;
+    const orders = listOrders();
+    const today = startOfToday();
+    const now = Date.now();
+    const elapsed = now - today;
+    const yesterday = today - 86400000;
+    const earning = (order: MerchantOrder) => EARNING.has(order.status);
+
+    const todays = orders.filter((order) => order.createdAt.getTime() >= today);
+    const yesterdayToTime = orders.filter((order) => order.createdAt.getTime() >= yesterday && order.createdAt.getTime() < yesterday + elapsed);
+    const revenueToday = todays.filter(earning).reduce((sum, order) => sum + order.total, 0);
+    const revenueYesterday = yesterdayToTime.filter(earning).reduce((sum, order) => sum + order.total, 0);
+
+    const unfulfilled = orders.filter((order) => UNFULFILLED.has(order.status));
+    const stale = unfulfilled.filter((order) => now - order.createdAt.getTime() > 48 * 3600000);
+
+    const low = lowStock();
+    const out = low.filter((product) => product.stock === 0);
+
+    const week = orders.filter((order) => order.createdAt.getTime() >= now - 7 * 86400000 && earning(order));
+    const prevWeek = orders.filter((order) => order.createdAt.getTime() >= now - 14 * 86400000 && order.createdAt.getTime() < now - 7 * 86400000 && earning(order));
+    const builderWeek = week.filter(isBuilderOrder).length;
+    const builderPrev = prevWeek.filter(isBuilderOrder).length;
+
+    return { orders, todays, revenueToday, revenueYesterday, unfulfilled, stale, low, out, builderWeek, builderPrev, weekCount: week.length };
+  }, [version]);
+
+  const refresh = () => setVersion((value) => value + 1);
+
+  /* ---------- prioritised tasks ---------- */
+  const tasks: Task[] = [];
+  const criticalCells = data.low.filter((product) => categoryOf(product.slug) === "Cells");
+  const awaitingShipment = data.orders.filter((order) => order.status === "packing" || order.status === "confirmed");
+  const pendingPayment = data.orders.filter((order) => order.status === "pending");
+  const risky = data.unfulfilled.filter((order) => order.riskFlags.length > 0);
+  const queued = ops.state.outbox.filter((row) => row.status === "queued");
+  const carts = ops.state.carts.filter((cart) => !cart.recovered && !cart.reminded);
+  const blockers = readinessAudit(ops.state.settings).filter((issue) => issue.severity === "blocker");
+  const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+  if (data.out.length) tasks.push({
+    id: "out", tone: "rose", icon: <BatteryWarning size={16} />,
+    title: `${plural(data.out.length, "product")} sold out`, meta: data.out.slice(0, 2).map((p) => p.name).join(", "),
+    action: "Restock", run: () => onNavigate("inventory"), open: () => onNavigate("inventory"),
+  });
+  if (criticalCells.length) tasks.push({
+    id: "cells", tone: "rose", icon: <BatteryWarning size={16} />,
+    title: `${plural(criticalCells.length, "cell")} critically low`, meta: criticalCells.slice(0, 2).map((p) => `${p.name} (${p.stock})`).join(", "),
+    action: "Reorder", run: () => onNavigate("inventory"), open: () => onNavigate("inventory"),
+  });
+  if (awaitingShipment.length) tasks.push({
+    id: "ship", tone: "amber", icon: <PackageCheck size={16} />,
+    title: `${plural(awaitingShipment.length, "order")} awaiting shipment`, meta: data.stale.length ? `${data.stale.length} older than 48 hours` : "Pack and book the courier",
+    action: "Ship", run: () => onNavigate("orders"), open: () => onNavigate("orders"),
+  });
+  if (risky.length) tasks.push({
+    id: "risk", tone: "rose", icon: <ShieldAlert size={16} />,
+    title: `${plural(risky.length, "order")} flagged for risk`, meta: risky[0].riskFlags[0] ?? "Check before dispatch",
+    action: "Review", run: () => onOpenOrder(risky[0]), open: () => onOpenOrder(risky[0]),
+  });
+  if (pendingPayment.length) tasks.push({
+    id: "pay", tone: "sky", icon: <CircleDollarSign size={16} />,
+    title: `${plural(pendingPayment.length, "payment")} to verify`, meta: "bKash / Nagad claims waiting for a TrxID check",
+    action: "Verify", run: () => onOpenOrder(pendingPayment[0]), open: () => onNavigate("orders"),
+  });
+  if (queued.length) tasks.push({
+    id: "outbox", tone: "amber", icon: <Send size={16} />,
+    title: `${plural(queued.length, "customer message")} queued`, meta: "Confirmations and courier updates not yet sent",
+    action: "Send all", run: () => { flushOutbox(); refresh(); toast(`${plural(queued.length, "message")} sent`); }, open: () => onNavigate("marketing", "growth"),
+  });
+  if (carts.length) tasks.push({
+    id: "carts", tone: "sky", icon: <ShoppingCart size={16} />,
+    title: `${plural(carts.length, "abandoned cart")} to recover`, meta: `${formatBDT(carts.reduce((sum, cart) => sum + cart.value, 0))} left at checkout`,
+    action: "Remind", run: () => { carts.forEach((cart) => queueAbandonedCart(cart.id)); refresh(); toast(`${plural(carts.length, "reminder")} queued`); }, open: () => onNavigate("marketing", "growth"),
+  });
+  if (blockers.length) tasks.push({
+    id: "blockers", tone: "amber", icon: <AlertTriangle size={16} />,
+    title: `${plural(blockers.length, "launch blocker")}`, meta: blockers.slice(0, 2).map((issue) => issue.label).join(" · "),
+    action: "Fix", run: () => onNavigate("settings", "settings"), open: () => onNavigate("settings", "settings"),
+  });
+
+  const builderShare = data.weekCount ? Math.round((data.builderWeek / data.weekCount) * 100) : 0;
+  const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="adm-page-title">Trading overview</h1>
-          <p className="text-[0.78rem] text-[#6e6e73]">Live figures from orders, inventory and ad spend.</p>
-        </div>
-        <div className="flex gap-1.5">
-          {RANGES.map((range) => (
-            <button key={range.id} type="button" className="adm-chip" data-active={days === range.id} onClick={() => setDays(range.id)}>
-              {range.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHead
+        title={greeting}
+        subtitle={`${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })} · ${tasks.length ? `${plural(tasks.length, "thing")} need${tasks.length === 1 ? "s" : ""} you` : "nothing urgent"}`}
+      />
 
-      <div className="adm-kpis">
-        <Stat label="Revenue" value={formatBDT(current.revenue)} delta={delta(current.revenue, previous.revenue)} hint={`vs previous ${days}d`} icon={<CircleDollarSign size={16} />} />
-        <Stat label="Orders" value={String(current.orders)} delta={delta(current.orders, previous.orders)} hint={`${current.units} units sold`} tone="sky" icon={<ShoppingCart size={16} />} />
-        <Stat label="Average order" value={formatBDT(current.aov)} delta={delta(current.aov, previous.aov)} hint="per order" tone="emerald" icon={<TrendingUp size={16} />} />
-        <Stat label="Ad spend" value={formatBDT(current.spend)} hint={`${channels.length} channels`} tone="amber" icon={<Percent size={16} />} />
-        <Stat label="ROAS" value={current.roas ? `${current.roas.toFixed(2)}×` : "—"} delta={delta(current.roas, previous.roas)} hint={current.profit >= 0 ? `${formatBDT(current.profit)} profit` : `${formatBDT(Math.abs(current.profit))} loss`} tone={current.roas >= 2 ? "emerald" : "rose"} icon={<ArrowUpRight size={16} />} />
-        <Stat label="COD share" value={`${current.codShare}%`} hint={`${formatBDT(current.revenue - current.paidRevenue)} to collect`} tone="amber" icon={<Truck size={16} />} />
-      </div>
+      {/* ---------- KPI strip ---------- */}
+      <section className="ax-kpis" aria-label="Today at a glance">
+        <button type="button" className="ax-kpi" onClick={() => onNavigate("analytics")}>
+          <span className="ax-caption">Today’s revenue</span>
+          <strong className="ax-kpi-value">{formatBDT(data.revenueToday)}</strong>
+          <span className="ax-kpi-foot"><TrendPill value={pctChange(data.revenueToday, data.revenueYesterday)} label="vs yesterday at this time" /> <span className="ax-caption">vs yesterday</span></span>
+        </button>
+        <button type="button" className="ax-kpi" onClick={() => onNavigate("orders")}>
+          <span className="ax-caption">Unfulfilled orders</span>
+          <strong className="ax-kpi-value">{data.unfulfilled.length}</strong>
+          <span className="ax-kpi-foot">
+            <span className="ax-pill" data-tone={data.stale.length ? "down" : "up"}>{data.stale.length ? `${data.stale.length} late` : "on time"}</span>
+            <span className="ax-caption">{data.todays.length} new today</span>
+          </span>
+        </button>
+        <button type="button" className="ax-kpi" onClick={() => onNavigate("inventory")}>
+          <span className="ax-caption">Low stock alerts</span>
+          <strong className="ax-kpi-value">{data.low.length}</strong>
+          <span className="ax-kpi-foot">
+            <span className="ax-pill" data-tone={data.out.length ? "down" : data.low.length ? "warn" : "up"}>{data.out.length ? `${data.out.length} out` : data.low.length ? "reorder" : "healthy"}</span>
+            <span className="ax-caption">at ≤{ops.state.settings.notifications.lowStockThreshold} units</span>
+          </span>
+        </button>
+        <button type="button" className="ax-kpi" data-accent="true" onClick={() => onNavigate("pack-ai")}>
+          <span className="ax-caption flex items-center gap-1"><Zap size={11} /> Battery AI conversions</span>
+          <strong className="ax-kpi-value">{data.builderWeek}</strong>
+          <span className="ax-kpi-foot"><TrendPill value={pctChange(data.builderWeek, data.builderPrev)} label="vs previous 7 days" /> <span className="ax-caption">7d · {builderShare}% of orders</span></span>
+        </button>
+      </section>
 
-      {blockers.length > 0 && (
-        <Panel
-          title="Before you spend on ads"
-          subtitle={`${blockers.length} blocker${blockers.length === 1 ? "" : "s"} must be cleared for a real launch`}
-          action={<Button size="sm" variant="primary" onClick={() => onNavigate("settings")}>Open settings</Button>}
-        >
-          <ul className="adm-checklist">
-            {issues.map((issue) => (
-              <li key={issue.id}>
-                <AlertTriangle size={15} className={issue.severity === "blocker" ? "mt-0.5 shrink-0 text-[#e11d48]" : "mt-0.5 shrink-0 text-[#f59e0b]"} />
-                <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-2 text-[0.83rem] font-semibold">
-                    {issue.label}
-                    <Badge tone={issue.severity === "blocker" ? "rose" : "amber"}>{issue.severity}</Badge>
-                  </p>
-                  <p className="mt-0.5 text-[0.73rem] leading-relaxed text-[#6e6e73]">{issue.detail}</p>
-                </div>
-              </li>
-            ))}
-            {issues.length === 0 && (
-              <li><PackageCheck size={15} className="mt-0.5 shrink-0 text-[#10b981]" /><p className="text-[0.83rem]">Every launch check passed. You are clear to take live traffic.</p></li>
-            )}
-          </ul>
-        </Panel>
-      )}
-
-      <Panel title="Revenue against ad spend" subtitle={`Daily, last ${days} days · hover a point for the breakdown`}>
-        <RevenueChart data={series} />
-      </Panel>
-
-      <div className="adm-grid lg:grid-cols-2">
-        <Panel title="Channel performance" subtitle="Attributed revenue, spend and return" action={<Button size="sm" variant="ghost" onClick={() => onNavigate("growth")}>Details</Button>}>
-          {channels.length === 0 ? (
-            <Empty title="No attributed orders yet" body="Orders placed from an ad click carry their source automatically." />
+      <div className="ax-overview-grid">
+        {/* ---------- needs attention ---------- */}
+        <section className="ax-card" aria-labelledby="attention-title">
+          <header className="ax-card-head">
+            <h2 id="attention-title" className="ax-title-sm">Needs attention</h2>
+            {tasks.length > 0 && <span className="ax-pill" data-tone="neutral">{tasks.length}</span>}
+          </header>
+          {tasks.length === 0 ? (
+            <div className="ax-empty"><span className="ax-dot is-static" data-tone="emerald" /> All caught up. New tasks appear here the moment they need you.</div>
           ) : (
-            <div className="adm-table-wrap">
-              <table className="adm-table">
-                <thead><tr><th>Channel</th><th className="text-right">Orders</th><th className="text-right">Revenue</th><th className="text-right">Spend</th><th className="text-right">ROAS</th></tr></thead>
-                <tbody>
-                  {channels.map((row, index) => (
-                    <tr key={row.channel}>
-                      <td>
-                        <span className="inline-flex items-center gap-2">
-                          <i className="size-2 rounded-full" style={{ background: CHART_HUES[index % CHART_HUES.length] }} />
-                          <span className="capitalize">{row.channel}</span>
-                        </span>
-                      </td>
-                      <td className="adm-num text-right">{row.orders}</td>
-                      <td className="adm-num text-right">{formatBDT(row.revenue)}</td>
-                      <td className="adm-num text-right text-[#6e6e73]">{row.spend ? formatBDT(row.spend) : "—"}</td>
-                      <td className="adm-num text-right">
-                        {row.roas ? <Badge tone={row.roas >= 2 ? "emerald" : row.roas >= 1 ? "amber" : "rose"}>{row.roas.toFixed(2)}×</Badge> : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="Order pipeline" subtitle="Every order by current stage">
-          {statusCounts.length ? (
-            <Donut slices={statusCounts} total={String(orders.length)} caption="orders" />
-          ) : (
-            <Empty title="No orders yet" />
-          )}
-        </Panel>
-      </div>
-
-      <div className="adm-grid lg:grid-cols-2">
-        <Panel title="Best sellers" subtitle="By attributed revenue">
-          {products.length ? (
-            <BarList rows={products.map((row) => ({ label: row.name, value: row.revenue, caption: `${row.units} units sold` }))} format={formatBDT} />
-          ) : (
-            <Empty title="Nothing sold in this window" />
-          )}
-        </Panel>
-
-        <Panel
-          title="Reorder alerts"
-          subtitle={`${stock.length} SKU${stock.length === 1 ? "" : "s"} at or below ${settings.notifications.lowStockThreshold} units · ${formatBDT(inventoryValue())} stock at retail`}
-          action={<Button size="sm" variant="ghost" onClick={() => onNavigate("inventory")}><Boxes size={13} /> Inventory</Button>}
-        >
-          {stock.length ? (
-            <ul className="flex flex-col gap-2.5">
-              {stock.slice(0, 6).map((product) => (
-                <li key={product.slug} className="flex items-center gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[0.8rem] font-medium">{product.name}</p>
-                    <p className="text-[0.68rem] text-[#6e6e73]">{product.sku} · {formatBDT(product.price)}</p>
-                  </div>
-                  <Badge tone={product.stock === 0 ? "rose" : "amber"}>{product.stock === 0 ? "Out of stock" : `${product.stock} left`}</Badge>
+            <ul className="ax-tasks">
+              {tasks.map((task) => (
+                <li key={task.id} className="ax-task" data-tone={task.tone}>
+                  <button type="button" className="ax-task-main" onClick={task.open}>
+                    <span className="ax-task-icon">{task.icon}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="ax-body block font-semibold">{task.title}</span>
+                      <span className="ax-caption block truncate">{task.meta}</span>
+                    </span>
+                  </button>
+                  <button type="button" className="ax-task-action" onClick={task.run}>{task.action}</button>
                 </li>
               ))}
             </ul>
-          ) : (
-            <Empty icon={<PackageCheck size={22} />} title="Stock levels are healthy" />
           )}
-        </Panel>
-      </div>
+        </section>
 
-      <Panel
-        title="Latest orders"
-        subtitle="Newest first"
-        action={<Button size="sm" variant="ghost" onClick={() => onNavigate("orders")}><Users size={13} /> All orders</Button>}
-      >
-        <div className="adm-table-wrap">
-          <table className="adm-table">
-            <thead><tr><th>Order</th><th>Customer</th><th>Status</th><th className="text-right">Total</th><th className="text-right">Placed</th></tr></thead>
-            <tbody>
-              {recent.map((order) => (
-                <tr key={order.orderNumber} className="cursor-pointer" onClick={() => onOpenOrder(order)}>
-                  <td className="adm-num text-[#4d7c0f]">{order.orderNumber}</td>
-                  <td>
-                    <p className="font-medium">{order.customerName}</p>
-                    <p className="text-[0.68rem] text-[#6e6e73]">{order.district}</p>
-                  </td>
-                  <td><Badge tone={order.status === "delivered" ? "emerald" : order.status === "cancelled" ? "rose" : "volt"}>{STATUS_META[order.status].label}</Badge></td>
-                  <td className="adm-num text-right">{formatBDT(order.total)}</td>
-                  <td className="text-right text-[0.72rem] text-[#6e6e73]">{formatDate(order.createdAt)}</td>
-                </tr>
+        {/* ---------- latest orders ---------- */}
+        <section className="ax-card" aria-labelledby="latest-title">
+          <header className="ax-card-head">
+            <h2 id="latest-title" className="ax-title-sm">Latest orders</h2>
+            <button type="button" className="ax-link" onClick={() => onNavigate("orders")}>All orders <ArrowRight size={13} /></button>
+          </header>
+          {data.orders.length === 0 ? (
+            <div className="ax-empty"><Package size={15} /> No orders yet.</div>
+          ) : (
+            <ul className="ax-rows">
+              {data.orders.slice(0, 6).map((order) => (
+                <li key={order.orderNumber}>
+                  <button type="button" className="ax-row" onClick={() => onOpenOrder(order)}>
+                    <i className="ax-dot is-static" style={{ background: STATUS_META[order.status].dot }} title={STATUS_META[order.status].label} aria-label={STATUS_META[order.status].label} />
+                    <span className="min-w-0 flex-1">
+                      <span className="ax-body block truncate font-medium">{order.customerName}{isBuilderOrder(order) && <Zap size={11} className="ml-1 inline text-[#4d7c0f]" aria-label="Battery Builder order" />}</span>
+                      <span className="ax-caption block truncate">{order.orderNumber} · {timeAgo(order.createdAt)}</span>
+                    </span>
+                    <span className="ax-body ax-num font-semibold">{formatBDT(order.total)}</span>
+                    <ChevronRight size={15} className="ax-row-chevron" />
+                  </button>
+                </li>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
+            </ul>
+          )}
+        </section>
+      </div>
     </>
   );
 }

@@ -77,6 +77,10 @@ export type Promo = {
   value: number;
   minSubtotal: number;
   maxDiscount?: number;
+  /** Presentation kind chosen in the console preset picker. */
+  kind?: "code" | "volume" | "bundle";
+  /** Bundle deal: the matching add-on shown next to the pack. */
+  bundleAddOn?: string;
   /** Console-managed controls; absent means "always on, unlimited". */
   active?: boolean;
   startsAt?: string | null;

@@ -19,6 +19,7 @@ import { Stars } from "@/components/ui";
 import { isLive, liveFetchProduct } from "@/lib/live";
 import { STORE } from "@/lib/commerce";
 import { ReviewVotes } from "@/components/review-votes";
+import { visibleHighlights } from "@/lib/compatibility-tags";
 
 const TABS = [
   { id: "overview", label: "Details" },
@@ -146,7 +147,7 @@ export function ProductTabs({
                 {product.description}
               </p>
               <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-                {product.highlights.map((highlight) => (
+                {visibleHighlights(product.highlights).map((highlight) => (
                   <li
                     key={highlight}
                     className="flex items-start gap-2 rounded-xl border border-line-soft bg-cream px-3 py-2.5 text-[0.82rem]"

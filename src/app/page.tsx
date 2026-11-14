@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Battery, CircuitBoard, Cpu, Flame, Headphones, Package, Quote, ShieldCheck, Sparkles, Star, Truck, Wrench, Zap } from "lucide-react";
 import { ProductCard } from "@/components/product-card";
+import { MiniCart } from "@/components/store/mini-cart";
 import { OfferCarousel, type OfferSlide } from "@/components/offer-carousel";
 import { ActivityTicker } from "@/components/activity-ticker";
 import { Stars } from "@/components/ui";
@@ -183,6 +184,7 @@ export default function HomePage() {
         <span className="flex items-center gap-2 text-[0.8rem] font-medium"><Headphones size={15} /> Need help choosing a part?</span>
         <a href={`https://wa.me/${STORE.whatsapp}`} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 text-[0.8rem] font-semibold">WhatsApp us <ArrowRight size={13} /></a>
       </div>
+      <MiniCart />
     </div>
   );
 }

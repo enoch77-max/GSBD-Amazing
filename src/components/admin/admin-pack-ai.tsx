@@ -1,263 +1,346 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { BadgeCheck, BatteryCharging, RotateCcw, Save, Sparkles, Zap } from "lucide-react";
+/**
+ * ⚡ Battery Pack Builder AI — the console for how packs are sold.
+ *
+ * Three deliberate tabs:
+ *   A. Pack rules      chemistries, series/parallel guardrails, BMS auto-match
+ *   B. Smart add-ons   recipe cards, real attach rates, bundle discount
+ *   C. Simulator       a real quote preview for a chosen voltage / capacity
+ */
+import { useMemo, useState } from "react";
+import {
+  ArrowRight, Battery, BatteryCharging, Check, ChevronRight, ClipboardCheck, Flame, Gauge, PackageCheck,
+  Plus, RotateCcw, Save, SlidersHorizontal, Sparkles, TrendingUp, Wrench, Zap,
+} from "lucide-react";
 import { ops } from "@/db/ops-store";
 import { readAllProducts } from "@/lib/queries";
-import { calculatePack, type PackConfiguration } from "@/lib/pack-builder";
+import { listOrders } from "@/lib/ops";
+import { isBuilderOrder, categoryOf } from "@/lib/admin-metrics";
+import { formatBDT } from "@/lib/format";
+import { useStoreVersion } from "@/lib/use-store";
 import {
-  DEFAULT_PACK_RECOMMENDATIONS,
-  RECOMMENDABLE_PARTS,
-  analysePack,
-  loadPackRecommendationSettings,
-  rankPackAddOns,
-  sanitizePackRecommendations,
-  savePackRecommendationSettings,
-  type PackRecommendationSettings,
+  DEFAULT_PACK_AI, SIM_CAPACITIES, SIM_VOLTAGES, attachRateForRule, sanitizePackAi, simulatePack,
+  type PackAddOnRule, type PackAiConsole, type PackChemistryId, type SimulatorChoice,
+} from "@/lib/pack-ai-console";
+import {
+  DEFAULT_PACK_RECOMMENDATIONS, loadPackRecommendationSettings, sanitizePackRecommendations,
+  savePackRecommendationSettings, type PackRecommendationSettings,
 } from "@/lib/pack-recommendations";
-import { Badge, Button, Field, Panel, Toggle } from "./admin-ui";
+import { Button, PageHead } from "./admin-ui";
 
-const SCENARIOS: Array<{ label: string; detail: string; config: PackConfiguration }> = [
-  { label: "Default build", detail: "4S2P · 18650 · 10A", config: { cellId: "18650", series: 4, parallel: 2, loadCurrentA: 10, extras: [] } },
-  { label: "Router backup", detail: "3S2P · 18650 · 10A", config: { cellId: "18650", series: 3, parallel: 2, loadCurrentA: 10, extras: [] } },
-  { label: "Solar backup", detail: "4S4P · LiFePO4 · 15A", config: { cellId: "lifepo4-32700", series: 4, parallel: 4, loadCurrentA: 15, extras: [] } },
-  { label: "E-bike pack", detail: "10S3P · 21700 · 30A", config: { cellId: "21700", series: 10, parallel: 3, loadCurrentA: 30, extras: [] } },
+type AiTab = "rules" | "addons" | "simulator";
+const TABS: Array<{ id: AiTab; label: string; short: string; icon: React.ReactNode }> = [
+  { id: "rules", label: "Pack rules & compatibility", short: "Rules", icon: <SlidersHorizontal size={15} /> },
+  { id: "addons", label: "Smart add-on AI suggestions", short: "Add-ons", icon: <Sparkles size={15} /> },
+  { id: "simulator", label: "AI simulator / test preview", short: "Simulator", icon: <Gauge size={15} /> },
 ];
 
-function NumberBox({ value, onChange, min, max, step = 1 }: { value: number; onChange: (value: number) => void; min: number; max: number; step?: number }) {
-  return (
-    <input
-      className="adm-input"
-      type="number"
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      onChange={(event) => {
-        const next = Number(event.target.value);
-        if (Number.isFinite(next)) onChange(Math.min(max, Math.max(min, Math.round(next))));
-      }}
-    />
-  );
-}
+const CHEM_ICON: Record<PackChemistryId, React.ReactNode> = {
+  "li-ion-18650": <Battery size={17} />,
+  "li-ion-21700": <BatteryCharging size={17} />,
+  lifepo4: <Flame size={17} />,
+  lipo: <Zap size={17} />,
+};
 
 export function AdminPackAI({ toast }: { toast: (message: string) => void }) {
-  const [draft, setDraft] = useState<PackRecommendationSettings>(() =>
-    sanitizePackRecommendations(ops.state.settings.packRecommendations),
-  );
+  useStoreVersion();
+  const [tab, setTab] = useState<AiTab>("rules");
+  const [rules, setRules] = useState<PackAiConsole>(() => sanitizePackAi(ops.state.packAi));
+  const [engine, setEngine] = useState<PackRecommendationSettings>(() => sanitizePackRecommendations(ops.state.settings.packRecommendations));
+  const [choice, setChoice] = useState<SimulatorChoice>({ chemistry: "li-ion-18650", voltage: 48, capacityAh: 15, loadA: 20 });
+  const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [persistence, setPersistence] = useState<string>("local");
+  const [persistence, setPersistence] = useState<"local" | "postgres" | "memory">("local");
+  const [showEngine, setShowEngine] = useState(false);
 
-  useEffect(() => {
-    void loadPackRecommendationSettings().then((remote) => {
-      if (!remote) return;
-      setDraft(remote);
-      ops.updateSettings((current) => ({ ...current, packRecommendations: remote }));
-      setPersistence("postgres");
-    });
-  }, []);
+  const catalogue = useMemo(() => { void 0; return readAllProducts(); }, []);
+  const builderOrders = useMemo(() => listOrders().filter(isBuilderOrder), []);
+  const simulation = useMemo(() => simulatePack(choice, rules, catalogue), [choice, rules, catalogue]);
+  const activeChemistries = rules.chemistries.filter((entry) => entry.active);
 
-  const edit = (patch: Partial<PackRecommendationSettings>) => {
-    setDraft((current) => sanitizePackRecommendations({ ...current, ...patch }));
+  const edit = (patch: Partial<PackAiConsole>) => { setRules((current) => sanitizePackAi({ ...current, ...patch })); setDirty(true); };
+  const editChemistry = (id: PackChemistryId, active: boolean) => {
+    const next = rules.chemistries.map((entry) => entry.id === id ? { ...entry, active } : entry);
+    edit({ chemistries: next });
   };
+  const editRule = (id: string, patch: Partial<PackAddOnRule>) => edit({ addOns: rules.addOns.map((rule) => rule.id === id ? { ...rule, ...patch } : rule) });
 
   const save = async () => {
     setSaving(true);
-    const clean = sanitizePackRecommendations(draft);
-    ops.updateSettings((current) => ({ ...current, packRecommendations: clean }));
-    const result = await savePackRecommendationSettings(clean);
-    setPersistence(result.persisted);
+    const clean = sanitizePackAi(rules);
+    ops.set({ packAi: clean });
+    ops.updateSettings((current) => ({ ...current, packRecommendations: sanitizePackRecommendations(engine) }));
+    const result = await savePackRecommendationSettings(sanitizePackRecommendations(engine));
+    setPersistence(result.persisted === "postgres" ? "postgres" : result.persisted);
+    setRules(clean);
+    setDirty(false);
     setSaving(false);
-    toast(
-      result.persisted === "postgres"
-        ? "Pack AI rules saved to the database — live on the builder"
-        : "Pack AI rules saved locally — the storefront will use them now",
-    );
+    toast(result.persisted === "postgres" ? "Builder AI rules saved — live on the storefront" : "Builder AI rules saved in this browser");
   };
-
+  const reloadRemote = async () => {
+    const remote = await loadPackRecommendationSettings();
+    if (!remote) { toast("No server copy — using the local rules"); return; }
+    setEngine(remote);
+    ops.updateSettings((current) => ({ ...current, packRecommendations: remote }));
+    setDirty(true);
+    toast("Loaded the server's scoring rules");
+  };
   const reset = () => {
-    const clean = structuredClone(DEFAULT_PACK_RECOMMENDATIONS);
-    setDraft(clean);
-    ops.updateSettings((current) => ({ ...current, packRecommendations: clean }));
-    void savePackRecommendationSettings(clean);
-    toast("Pack AI rules restored to workshop defaults");
+    setRules(structuredClone(DEFAULT_PACK_AI));
+    setEngine(structuredClone(DEFAULT_PACK_RECOMMENDATIONS));
+    setDirty(true);
+    toast("Builder AI rules reset — save to apply");
   };
 
-  const previews = useMemo(() => {
-    const products = readAllProducts();
-    return SCENARIOS.map((scenario) => {
-      try {
-        const result = calculatePack(scenario.config, { products });
-        const scored = [...rankPackAddOns(result, products, draft).values()].sort(
-          (a, b) => Number(b.recommended) - Number(a.recommended) || b.score - a.score,
-        );
-        const intelligence = analysePack(result, draft);
-        return {
-          ...scenario,
-          result,
-          top: scored[0] ?? null,
-          active: Boolean(scored[0]?.recommended),
-          intelligence,
-        };
-      } catch {
-        return { ...scenario, result: null, top: null, active: false, intelligence: null };
-      }
-    });
-  }, [draft]);
-
-  const toggleSlug = (field: "boostSlugs" | "hiddenSlugs", slug: string) => {
-    const current = draft[field];
-    edit({ [field]: current.includes(slug) ? current.filter((entry) => entry !== slug) : [...current, slug] });
-  };
+  const overallAttach = builderOrders.length
+    ? Math.round((builderOrders.filter((order) => order.items.some((item) => ["bms-circuits", "tools-safety", "diy-prototyping"].includes(categoryOf(item.slug)))).length / builderOrders.length) * 100)
+    : 0;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="adm-page-title">Pack AI · smart recommendations</h1>
-          <p className="text-[0.78rem] text-[#6e6e73]">
-            Control the &ldquo;recommended&rdquo; capsule the pack builder puts on its best suggested part — e.g. an active balancer for longer backup.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={draft.enabled && draft.strategy !== "off" ? "emerald" : "neutral"}>
-            {draft.enabled && draft.strategy !== "off" ? "Capsule live" : "Capsule paused"}
-          </Badge>
-          <Button size="sm" variant="ghost" onClick={reset}><RotateCcw size={12} /> Reset</Button>
-          <Button size="sm" variant="primary" onClick={() => void save()} disabled={saving}>
-            <Save size={12} /> {saving ? "Saving…" : "Save rules"}
-          </Button>
-        </div>
+    <>
+      <PageHead
+        title="⚡ Battery Pack Builder AI"
+        subtitle={`${activeChemistries.length} chemistries live · ${rules.addOns.filter((rule) => rule.enabled).length} add-on recipes · ${overallAttach}% add-on attach on builder orders`}
+        actions={
+          <>
+            <span className={`ax-ai-save-state`} data-dirty={dirty || undefined}>{dirty ? "Unsaved changes" : `Saved ${persistence === "postgres" ? "to database" : "locally"}`}</span>
+            <Button size="sm" variant="ghost" onClick={reset}><RotateCcw size={13} /> Reset</Button>
+            <Button size="sm" variant="primary" disabled={saving || !dirty} onClick={() => void save()}><Save size={13} /> {saving ? "Saving…" : "Save rules"}</Button>
+          </>
+        }
+      />
+
+      <div className="ax-ai-tabs" role="tablist" aria-label="Battery builder sections">
+        {TABS.map((entry) => (
+          <button key={entry.id} type="button" role="tab" aria-selected={tab === entry.id} data-active={tab === entry.id} onClick={() => setTab(entry.id)}>
+            {entry.icon}<span className="ax-ai-tab-label">{entry.label}</span><span className="ax-ai-tab-short">{entry.short}</span>
+          </button>
+        ))}
       </div>
 
-      <div className="adm-status-pill inline-flex w-fit items-center gap-2">
-        <BadgeCheck size={12} /> Stored in {persistence === "postgres" ? "PostgreSQL" : persistence === "memory" ? "server memory" : "browser"} · changes appear on the builder immediately
-      </div>
+      {tab === "rules" && (
+        <div className="ax-ai-page">
+          <div className="ax-kpis">
+            <div className="ax-kpi" data-static="true"><span className="ax-caption">Chemistries live</span><strong className="ax-kpi-value">{activeChemistries.length}<small> / {rules.chemistries.length}</small></strong><span className="ax-kpi-foot"><span className="ax-pill" data-tone={activeChemistries.length ? "up" : "down"}>{activeChemistries.length ? "Selling" : "Paused"}</span></span></div>
+            <div className="ax-kpi" data-static="true"><span className="ax-caption">Series guardrail</span><strong className="ax-kpi-value">{rules.seriesMin}S–{rules.seriesMax}S</strong><span className="ax-kpi-foot"><span className="ax-caption">of 1S–24S physical range</span></span></div>
+            <div className="ax-kpi" data-static="true"><span className="ax-caption">Parallel guardrail</span><strong className="ax-kpi-value">{rules.parallelMin}P–{rules.parallelMax}P</strong><span className="ax-kpi-foot"><span className="ax-caption">of 1P–20P physical range</span></span></div>
+            <div className="ax-kpi" data-static="true" data-accent="true"><span className="ax-caption flex items-center gap-1"><Sparkles size={11} /> Auto-optimise</span><strong className="ax-kpi-value">{rules.autoOptimize ? "On" : "Off"}</strong><span className="ax-kpi-foot"><span className="ax-caption">{rules.autoMatchBms ? "BMS auto-matched" : "BMS manual"}</span></span></div>
+          </div>
 
-      <div className="grid gap-3 xl:grid-cols-2">
-        <Panel title="Recommendation engine" subtitle="Which part gets the capsule, and how it is chosen">
-          <div className="flex flex-col gap-3">
-            <Toggle checked={draft.enabled} onChange={(enabled) => edit({ enabled })} label="Show smart recommendations" hint="Master switch for the capsule on pack-builder suggestions." />
-            <Field label="Selection strategy" hint="Smart scores each compatible part against the exact build. Pinned always features the chosen part when eligible.">
-              <select className="adm-input" value={draft.strategy} onChange={(event) => edit({ strategy: event.target.value as PackRecommendationSettings["strategy"] })}>
-                <option value="smart">Smart scoring (recommended)</option>
-                <option value="pinned">Always pin featured part</option>
-                <option value="off">Off — plain suggestions only</option>
-              </select>
-            </Field>
-            <Field label="Featured upgrade" hint="Default: 5A active balancer. It keeps series groups matched, so more of the pack's capacity is usable on every backup cycle.">
-              <select className="adm-input" value={draft.featuredSlug} onChange={(event) => edit({ featuredSlug: event.target.value })}>
-                {RECOMMENDABLE_PARTS.map((part) => <option key={part.slug} value={part.slug}>{part.label}</option>)}
-              </select>
-            </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Capsule label"><input className="adm-input" value={draft.badgeLabel} onChange={(event) => edit({ badgeLabel: event.target.value })} /></Field>
-              <Field label="Cap on claimed backup gain (%)"><NumberBox value={draft.gainPct} min={0} max={60} onChange={(gainPct) => edit({ gainPct })} /></Field>
-            </div>
-            <Toggle checked={draft.showScore} onChange={(showScore) => edit({ showScore })} label="Show match score" hint="Displays the calculated fit percentage inside the capsule." />
-            <Toggle checked={draft.allowAddToPack} onChange={(allowAddToPack) => edit({ allowAddToPack })} label="One-click add to build" hint="Lets a customer add the recommended part into their custom pack quote, not just the bag." />
-          </div>
-        </Panel>
-
-        <Panel title="Benefit copy" subtitle="Shown inside the recommended capsule. {gain}, {life}, {minutes}, {series}, {pack} and {energy} are filled from the pack physics.">
-          <div className="flex flex-col gap-3">
-            <Field label="Headline"><input className="adm-input" value={draft.headline} onChange={(event) => edit({ headline: event.target.value })} /></Field>
-            <Field label="Explanation"><textarea className="adm-input min-h-[6rem] resize-y" value={draft.detail} onChange={(event) => edit({ detail: event.target.value })} /></Field>
-            <div className="rounded-lg border border-[#e3e3e8] bg-[#0e2119] p-3">
-              <p className="text-[0.64rem] font-bold uppercase tracking-[.12em] text-[#6e6e73]">Customer-facing preview</p>
-              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#c8ff38] px-2.5 py-1 text-[0.66rem] font-bold text-[#12291c]"><Sparkles size={11} /> {draft.badgeLabel}</p>
-              <p className="mt-2 font-display text-[0.95rem] font-bold text-[#1d1d1f]">{draft.headline.replace("{gain}", "3.5").replace("{life}", "12").replace("{minutes}", "9").replace("{series}", "4")}</p>
-              <p className="mt-1 text-[0.74rem] leading-relaxed text-[#6e6e73]">{draft.detail.replace("{series}", "4").replace("{gain}", "3.5").replace("{life}", "12")}</p>
-            </div>
-          </div>
-        </Panel>
-
-        <Panel title="Eligibility" subtitle="The capsule only appears when the build actually benefits from the upgrade">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Minimum series groups"><NumberBox value={draft.minSeries} min={1} max={24} onChange={(minSeries) => edit({ minSeries })} /></Field>
-            <Field label="Minimum parallel strings"><NumberBox value={draft.minParallel} min={1} max={12} onChange={(minParallel) => edit({ minParallel })} /></Field>
-            <Field label="Minimum pack energy (Wh)"><NumberBox value={draft.minEnergyWh} min={0} max={10000} onChange={(minEnergyWh) => edit({ minEnergyWh })} /></Field>
-            <Field label="Chemistry filter">
-              <select className="adm-input" value={draft.chemistry} onChange={(event) => edit({ chemistry: event.target.value as PackRecommendationSettings["chemistry"] })}>
-                <option value="any">All chemistries</option>
-                <option value="li-ion">Li-ion only</option>
-                <option value="lifepo4">LiFePO4 only</option>
-              </select>
-            </Field>
-          </div>
-          <div className="mt-3">
-            <Field label="Minimum match score" hint="Smart strategy only. Raise it to show the capsule on fewer builds."><NumberBox value={draft.scoreThreshold} min={0} max={150} onChange={(scoreThreshold) => edit({ scoreThreshold })} /></Field>
-          </div>
-        </Panel>
-
-        <Panel title="Ranking weights" subtitle="Tune how strongly each build signal influences the smart score">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Cell balance weight (%)"><NumberBox value={draft.balanceWeight} min={0} max={200} onChange={(balanceWeight) => edit({ balanceWeight })} /></Field>
-            <Field label="Backup runtime weight (%)"><NumberBox value={draft.backupWeight} min={0} max={200} onChange={(backupWeight) => edit({ backupWeight })} /></Field>
-            <Field label="Protection weight (%)"><NumberBox value={draft.protectionWeight} min={0} max={200} onChange={(protectionWeight) => edit({ protectionWeight })} /></Field>
-            <Field label="Featured-part boost (points)"><NumberBox value={draft.pinnedBoost} min={0} max={100} onChange={(pinnedBoost) => edit({ pinnedBoost })} /></Field>
-          </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <div>
-              <p className="adm-field-label">Boost these parts</p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {RECOMMENDABLE_PARTS.map((part) => (
-                  <button key={part.slug} type="button" className="adm-chip" data-active={draft.boostSlugs.includes(part.slug)} onClick={() => toggleSlug("boostSlugs", part.slug)}>{part.label}</button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="adm-field-label">Hide these parts</p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {RECOMMENDABLE_PARTS.map((part) => (
-                  <button key={part.slug} type="button" className="adm-chip" data-active={draft.hiddenSlugs.includes(part.slug)} onClick={() => toggleSlug("hiddenSlugs", part.slug)}>{part.label}</button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Panel>
-      </div>
-
-      <Panel title="Live simulation" subtitle="The capsule shoppers see on the Optional add-ons list for typical builds — scores update as you edit the rules">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {previews.map((scenario) => (
-            <div key={scenario.label} className="rounded-xl border border-[#e3e3e8] bg-[#0b1b14] p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 text-[0.8rem] font-semibold text-[#1d1d1f]"><BatteryCharging size={13} /> {scenario.label}</span>
-                <Badge tone={scenario.active ? "emerald" : "neutral"}>{scenario.active ? "Capsule shown" : "No capsule"}</Badge>
-              </div>
-              <p className="mt-1 text-[0.7rem] text-[#6e6e73]">{scenario.detail}</p>
-              {scenario.top ? (
-                <>
-                  <div className="mt-3 rounded-lg border border-[#e3e3e8] bg-[#10281c] p-2.5">
-                    <p className="text-[0.62rem] font-bold uppercase tracking-[.1em] text-[#4d7c0f]">Top ranked part</p>
-                    <p className="mt-1 text-[0.84rem] font-semibold text-[#1d1d1f]">{scenario.top.product.name}</p>
-                    <p className="mt-1 text-[0.7rem] text-[#6e6e73]">{scenario.top.impact}</p>
+          <section className="ax-card">
+            <header className="ax-card-head"><div><h2 className="ax-title-sm">Supported chemistries</h2><p className="ax-caption mt-0.5">Switch a chemistry off and the Builder stops quoting it immediately.</p></div></header>
+            <div className="ax-card-body ax-chem-grid">
+              {rules.chemistries.map((entry) => (
+                <article key={entry.id} className="ax-chem-card" data-active={entry.active || undefined} data-pending={!entry.cellId && entry.active ? "true" : undefined}>
+                  <div className="ax-chem-head">
+                    <span className="ax-chem-icon">{CHEM_ICON[entry.id]}</span>
+                    <div className="min-w-0 flex-1"><p className="ax-body font-semibold">{entry.label}</p><p className="ax-caption">{entry.detail}</p></div>
+                    <button type="button" role="switch" aria-checked={entry.active} aria-label={`${entry.active ? "Disable" : "Enable"} ${entry.label}`} className="ax-switch-lg" data-on={entry.active} onClick={() => editChemistry(entry.id, !entry.active)}><span /></button>
                   </div>
-                  <div className="mt-2 flex items-center justify-between text-[0.7rem] text-[#6e6e73]">
-                    <span>Score <strong className="text-[#1d1d1f]">{scenario.top.score}/100</strong></span>
-                    <span>Backup ~{scenario.intelligence?.backupMinutes ?? 0} min</span>
+                  <dl className="ax-chem-specs">
+                    <div><dt>Voltage</dt><dd>{entry.voltageRange}</dd></div>
+                    <div><dt>Capacity</dt><dd>{entry.capacityRange}</dd></div>
+                  </dl>
+                  <p className="ax-chem-state">{entry.active ? <><Check size={12} /> Live in the Builder</> : <>Paused — hidden from new builds</>}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="ax-card">
+            <header className="ax-card-head"><div><h2 className="ax-title-sm">Configuration guardrails</h2><p className="ax-caption mt-0.5">Hard limits the Builder refuses to quote, plus automatic electrical matching.</p></div><span className="ax-pill" data-tone={rules.enforceLimits ? "up" : "warn"}>{rules.enforceLimits ? "Enforcing" : "Advisory"}</span></header>
+            <div className="ax-card-body ax-guardrails">
+              <div className="ax-range">
+                <div className="ax-range-head"><span><b>Series</b><small>1S–24S · voltage safety</small></span><b className="adm-num">{rules.seriesMin}S – {rules.seriesMax}S</b></div>
+                <label>Minimum <input type="range" min={1} max={24} value={rules.seriesMin} aria-label="Minimum series" onChange={(event) => edit({ seriesMin: Math.min(Number(event.target.value), rules.seriesMax) })} /><output>{rules.seriesMin}S</output></label>
+                <label>Maximum <input type="range" min={1} max={24} value={rules.seriesMax} aria-label="Maximum series" onChange={(event) => edit({ seriesMax: Math.max(Number(event.target.value), rules.seriesMin) })} /><output>{rules.seriesMax}S</output></label>
+              </div>
+              <div className="ax-range">
+                <div className="ax-range-head"><span><b>Parallel</b><small>1P–20P · capacity and current</small></span><b className="adm-num">{rules.parallelMin}P – {rules.parallelMax}P</b></div>
+                <label>Minimum <input type="range" min={1} max={20} value={rules.parallelMin} aria-label="Minimum parallel" onChange={(event) => edit({ parallelMin: Math.min(Number(event.target.value), rules.parallelMax) })} /><output>{rules.parallelMin}P</output></label>
+                <label>Maximum <input type="range" min={1} max={20} value={rules.parallelMax} aria-label="Maximum parallel" onChange={(event) => edit({ parallelMax: Math.max(Number(event.target.value), rules.parallelMin) })} /><output>{rules.parallelMax}P</output></label>
+              </div>
+              <div className="ax-toggle-stack">
+                <ToggleRow label="Auto-match BMS continuous amps to cell discharge rating" hint="Picks a BMS whose rated current covers the pack's continuous discharge plus headroom." checked={rules.autoMatchBms} onChange={(value) => edit({ autoMatchBms: value })} />
+                <ToggleRow label="Enforce guardrails in the storefront" hint="Off = show a warning but still quote. On = refuse out-of-range builds." checked={rules.enforceLimits} onChange={(value) => edit({ enforceLimits: value })} />
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {tab === "addons" && (
+        <div className="ax-ai-page">
+          <section className="ax-card" data-accent="true">
+            <div className="ax-card-body ax-ai-optimize">
+              <div className="min-w-0">
+                <p className="ax-body flex items-center gap-1.5 font-semibold"><Sparkles size={15} className="text-[#4d7c0f]" /> AI auto-optimise</p>
+                <p className="ax-caption mt-0.5">Rank recipes by fit and margin, and surface the single best add-on as the &ldquo;recommended&rdquo; capsule.</p>
+              </div>
+              <div className="ax-ai-optimize-controls">
+                <span className="ax-attach-badge"><TrendingUp size={12} /> {overallAttach}% attach</span>
+                <button type="button" role="switch" aria-checked={rules.autoOptimize} aria-label="AI auto-optimise" className="ax-switch-lg" data-on={rules.autoOptimize} onClick={() => edit({ autoOptimize: !rules.autoOptimize })}><span /></button>
+              </div>
+            </div>
+            <div className="ax-card-body ax-bundle-row">
+              <div className="min-w-0"><p className="ax-body font-medium">Bundle discount on add-ons</p><p className="ax-caption mt-0.5">Applied when a customer accepts an AI suggestion with the pack.</p></div>
+              <div className="ax-bundle-stepper" role="group" aria-label="Bundle discount">
+                <button type="button" aria-label="Decrease bundle discount" disabled={rules.bundleDiscountPct <= 0} onClick={() => edit({ bundleDiscountPct: Math.max(0, rules.bundleDiscountPct - 1) })}>−</button>
+                <output>{rules.bundleDiscountPct}% off</output>
+                <button type="button" aria-label="Increase bundle discount" disabled={rules.bundleDiscountPct >= 30} onClick={() => edit({ bundleDiscountPct: Math.min(30, rules.bundleDiscountPct + 1) })}>+</button>
+              </div>
+            </div>
+          </section>
+
+          <div className="ax-ai-recipes">
+            {rules.addOns.map((rule) => {
+              const rate = attachRateForRule(rule, builderOrders, categoryOf);
+              return (
+                <article key={rule.id} className="ax-recipe" data-off={!rule.enabled || undefined}>
+                  <header className="ax-recipe-head">
+                    <span className="ax-recipe-icon"><Sparkles size={15} /></span>
+                    <div className="min-w-0 flex-1"><p className="ax-body font-semibold">{rule.label}</p><p className="ax-caption">{rule.suggests.length} suggested item{rule.suggests.length === 1 ? "" : "s"}</p></div>
+                    <span className="ax-attach-badge" data-tone={rate >= 40 ? "up" : rate > 0 ? "warn" : "neutral"}>{rate}% attach</span>
+                    <button type="button" role="switch" aria-checked={rule.enabled} aria-label={`${rule.enabled ? "Pause" : "Enable"} ${rule.label} recipe`} className="ax-switch-lg" data-on={rule.enabled} onClick={() => editRule(rule.id, { enabled: !rule.enabled })}><span /></button>
+                  </header>
+                  <div className="ax-recipe-flow">
+                    <div className="ax-recipe-node ax-recipe-trigger"><span className="ax-caption">Trigger</span><p>{rule.trigger}</p></div>
+                    <span className="ax-recipe-arrow" aria-hidden="true"><ArrowRight size={15} /></span>
+                    <div className="ax-recipe-node ax-recipe-suggest"><span className="ax-caption">AI suggests</span>
+                      <ul>{rule.suggests.map((item) => <li key={item}><Plus size={11} />{item}</li>)}</ul>
+                      {rules.bundleDiscountPct > 0 && <span className="ax-recipe-discount">{rules.bundleDiscountPct}% off add-on</span>}
+                    </div>
                   </div>
-                  {scenario.intelligence && !scenario.intelligence.eligible && (
-                    <p className="mt-1.5 text-[0.68rem] text-[#92400e]">{scenario.intelligence.eligibilityNote}</p>
+                </article>
+              );
+            })}
+          </div>
+
+          <details className="ax-card ax-ai-engine">
+            <summary><span><Wrench size={15} /> Engine scoring weights</span><span className="ax-caption">{engine.strategy === "smart" ? "Smart scoring" : engine.strategy === "pinned" ? "Pinned part" : "Off"} · {engine.scoreThreshold} threshold</span></summary>
+            <div className="ax-card-body grid gap-3 sm:grid-cols-3">
+              <label className="ax-field-mini"><span>Strategy</span>
+                <select className="adm-select" value={engine.strategy} onChange={(event) => { setEngine((current) => ({ ...current, strategy: event.target.value as PackRecommendationSettings["strategy"] })); setDirty(true); }}>
+                  <option value="smart">Smart scoring</option><option value="pinned">Always pin one part</option><option value="off">Off</option>
+                </select>
+              </label>
+              <label className="ax-field-mini"><span>Backup gain %, shown in copy</span>
+                <input className="adm-input adm-num" type="number" min={0} max={60} value={engine.gainPct} onChange={(event) => { setEngine((current) => ({ ...current, gainPct: Number(event.target.value) })); setDirty(true); }} />
+              </label>
+              <label className="ax-field-mini"><span>Score threshold</span>
+                <input className="adm-input adm-num" type="number" min={0} max={150} value={engine.scoreThreshold} onChange={(event) => { setEngine((current) => ({ ...current, scoreThreshold: Number(event.target.value) })); setDirty(true); }} />
+              </label>
+              <div className="sm:col-span-3 flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={() => void reloadRemote()}><RotateCcw size={13} /> Load server rules</Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowEngine((value) => !value)}>{showEngine ? "Hide" : "Show"} detailed weights</Button>
+                {showEngine && <span className="ax-caption">Balance {engine.balanceWeight} · Backup {engine.backupWeight} · Protection {engine.protectionWeight} · Pinned boost {engine.pinnedBoost}</span>}
+              </div>
+            </div>
+          </details>
+        </div>
+      )}
+
+      {tab === "simulator" && (
+        <div className="ax-ai-page">
+          <section className="ax-card">
+            <header className="ax-card-head"><div><h2 className="ax-title-sm">Test a customer build</h2><p className="ax-caption mt-0.5">The exact cells, BMS and add-ons a shopper would see — calculated, not mocked.</p></div></header>
+            <div className="ax-card-body ax-sim-controls">
+              <div className="ax-sim-field">
+                <span className="ax-caption">Chemistry</span>
+                <div className="ax-sim-options">
+                  {rules.chemistries.map((entry) => (
+                    <button key={entry.id} type="button" data-active={choice.chemistry === entry.id} disabled={!entry.active} aria-pressed={choice.chemistry === entry.id} onClick={() => setChoice((current) => ({ ...current, chemistry: entry.id }))}>
+                      {CHEM_ICON[entry.id]}<span>{entry.label}</span>{!entry.active && <i className="ax-sim-off">off</i>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="ax-sim-field">
+                <span className="ax-caption">Target voltage</span>
+                <div className="ax-sim-options numeric">
+                  {SIM_VOLTAGES.map((voltage) => <button key={voltage} type="button" data-active={choice.voltage === voltage} aria-pressed={choice.voltage === voltage} onClick={() => setChoice((current) => ({ ...current, voltage }))}>{voltage}V</button>)}
+                </div>
+              </div>
+              <div className="ax-sim-field">
+                <span className="ax-caption">Target capacity</span>
+                <div className="ax-sim-options numeric">
+                  {SIM_CAPACITIES.map((capacity) => <button key={capacity} type="button" data-active={choice.capacityAh === capacity} aria-pressed={choice.capacityAh === capacity} onClick={() => setChoice((current) => ({ ...current, capacityAh: capacity }))}>{capacity}Ah</button>)}
+                </div>
+              </div>
+              <label className="ax-sim-field"><span className="ax-caption">Continuous load · {choice.loadA}A</span><input type="range" min={1} max={60} value={choice.loadA} aria-label="Continuous load amps" onChange={(event) => setChoice((current) => ({ ...current, loadA: Number(event.target.value) }))} /></label>
+            </div>
+          </section>
+
+          {!simulation.ok ? (
+            <section className="ax-card ax-sim-blocked" role="status">
+              <span className="ax-sim-blocked-icon"><Wrench size={18} /></span>
+              <div><p className="ax-body font-semibold">Guardrail reached</p><p className="ax-caption mt-0.5">{simulation.guardrail}</p></div>
+              <button type="button" className="ax-link" onClick={() => setTab("rules")}>Adjust rules <ChevronRight size={14} /></button>
+            </section>
+          ) : (
+            <div className="ax-sim-result">
+              <section className="ax-card ax-sim-quote">
+                <div className="ax-card-body">
+                  <div className="ax-sim-title">
+                    <div><p className="ax-caption">Preview build</p><p className="ax-sim-name">{simulation.result!.config.series}S{simulation.result!.config.parallel}P · {simulation.result!.nominalVoltage}V · {simulation.result!.capacityAh}Ah</p><p className="ax-caption mt-0.5">{simulation.chemistry.label} · {simulation.result!.energyWh}Wh · {simulation.result!.cellCount} cells</p></div>
+                    <span className="ax-sim-price adm-num">{formatBDT(simulation.result!.price)}</span>
+                  </div>
+                  <dl className="ax-sim-facts">
+                    <div><dt>Cells</dt><dd className="adm-num">{simulation.result!.cellCount} × {simulation.result!.cell.label}</dd></div>
+                    <div><dt>BMS</dt><dd>{simulation.result!.bms.name} · <span className="adm-num">{simulation.result!.bms.ratedCurrentA ?? simulation.result!.recommendedCurrentA}A</span></dd></div>
+                    <div><dt>Charge voltage</dt><dd className="adm-num">{simulation.result!.chargeVoltage}V</dd></div>
+                    <div><dt>Peak current</dt><dd className="adm-num">{simulation.result!.estimatedPeakCurrentA}A</dd></div>
+                    <div><dt>Dimensions</dt><dd className="adm-num">{simulation.result!.dimensionsMm.length}×{simulation.result!.dimensionsMm.width}×{simulation.result!.dimensionsMm.height}mm</dd></div>
+                    <div><dt>Weight</dt><dd className="adm-num">{simulation.result!.weightKg}kg</dd></div>
+                  </dl>
+                  <ul className="ax-sim-lines">
+                    {simulation.result!.components.map((part) => (
+                      <li key={part.key}>
+                        <span className="min-w-0 flex-1"><b>{part.name}</b><small>{part.qty} × {formatBDT(part.unitPrice)}{part.note ? ` · ${part.note}` : ""}</small></span>
+                        <span className="adm-num">{formatBDT(part.total)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </section>
+
+              <section className="ax-card" data-accent="true">
+                <header className="ax-card-head"><div><h2 className="ax-title-sm flex items-center gap-1.5"><Sparkles size={14} className="text-[#4d7c0f]" /> AI add-ons</h2><p className="ax-caption mt-0.5">{rules.autoOptimize ? "Auto-optimised by fit" : "Rules order"} · {rules.bundleDiscountPct}% bundle discount</p></div><span className="ax-attach-badge"><TrendingUp size={12} /> {simulation.suggestions.length} matched</span></header>
+                <div className="ax-card-body">
+                  {simulation.suggestions.length === 0 ? <p className="ax-caption">No enabled recipe matches this build. Add stock in a rule category or enable a recipe.</p> : (
+                    <ul className="ax-sim-addons">
+                      {simulation.suggestions.map((entry) => (
+                        <li key={entry.slug}>
+                          <span className="ax-sim-addon-icon"><PackageCheck size={15} /></span>
+                          <span className="min-w-0 flex-1"><b>{entry.name}</b><small>{entry.recommended ? "Recommended · " : ""}{entry.reason}</small></span>
+                          <span className="ax-sim-addon-price"><b className="adm-num">{formatBDT(entry.discounted)}</b>{entry.price !== entry.discounted && <s className="adm-num">{formatBDT(entry.price)}</s>}</span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
-                </>
-              ) : (
-                <p className="mt-3 text-[0.72rem] text-[#6e6e73]">No compatible suggestions for this build.</p>
-              )}
+                  <dl className="ax-sim-total">
+                    <div><dt>Pack</dt><dd className="adm-num">{formatBDT(simulation.result!.price)}</dd></div>
+                    <div><dt>Add-ons</dt><dd className="adm-num">{formatBDT(simulation.addOnDiscounted)}</dd></div>
+                    {simulation.saving > 0 && <div className="is-saving"><dt>Bundle saving</dt><dd className="adm-num">−{formatBDT(simulation.saving)}</dd></div>}
+                    <div className="is-total"><dt>Customer pays</dt><dd className="adm-num">{formatBDT(simulation.grandTotal)}</dd></div>
+                  </dl>
+                  <div className="ax-sim-note"><ClipboardCheck size={14} /><span>Preview only. Stock, BMS and prices are re-checked at checkout.</span></div>
+                </div>
+              </section>
             </div>
-          ))}
+          )}
         </div>
-      </Panel>
+      )}
+    </>
+  );
+}
 
-      <Panel title="How the smart score works" subtitle="Every number comes from the pack physics — no guesses">
-        <div className="grid gap-2 text-[0.75rem] leading-relaxed text-[#6e6e73] sm:grid-cols-2">
-          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#4d7c0f]" /> Mismatch: the weakest of S groups sits ~σ·z(S) below average (σ = cell spread ÷ √P, z from order statistics). Passive BMS boards can&apos;t recover it during use; a 5A active balancer can.</p>
-          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#4d7c0f]" /> Drift: monthly self-discharge spread is compared with the BMS&apos;s real balance current (35–60mA passive, 2A JK active) — large LiFePO4 banks drift more than a passive board can correct.</p>
-          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#4d7c0f]" /> Lifespan: the weakest group is over-discharged on every cycle; removing that stress raises cycle life — shown as +{"{life}"}%.</p>
-          <p className="flex gap-2"><Zap size={14} className="mt-0.5 shrink-0 text-[#4d7c0f]" /> Packs whose BMS already balances actively are scored down automatically, so the capsule only appears where it genuinely helps.</p>
-        </div>
-      </Panel>
+function ToggleRow({ label, hint, checked, onChange }: { label: string; hint: string; checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <div className="ax-toggle-row">
+      <div className="min-w-0"><p className="ax-body font-medium">{label}</p><p className="ax-caption mt-0.5">{hint}</p></div>
+      <button type="button" role="switch" aria-checked={checked} aria-label={label} className="ax-switch-lg" data-on={checked} onClick={() => onChange(!checked)}><span /></button>
     </div>
   );
 }

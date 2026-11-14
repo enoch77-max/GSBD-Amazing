@@ -273,7 +273,7 @@ export function CartToast() {
   const cart = useCart();
   if (!cart.toast || cart.isOpen) return null;
   return (
-    <div className="fixed inset-x-3 bottom-[calc(4.8rem+env(safe-area-inset-bottom))] z-[60] flex justify-center sm:inset-x-auto sm:right-6 sm:justify-end lg:bottom-6">
+    <div className="cart-toast-slot fixed inset-x-3 bottom-[calc(4.8rem+env(safe-area-inset-bottom))] z-[60] flex justify-center sm:inset-x-auto sm:right-6 sm:justify-end lg:bottom-6">
       <div className="animate-toast-in flex w-full max-w-sm items-center gap-3 rounded-2xl border border-ink/10 bg-ink p-2.5 pr-3 text-cream shadow-[0_24px_50px_-24px_rgba(11,23,18,0.8)]">
         {cart.toast.image ? (
           <span className="relative size-11 shrink-0 overflow-hidden rounded-xl bg-ink-soft">

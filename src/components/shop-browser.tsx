@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, ChevronDown, Headphones, Loader2, PackageSearch, Search, SlidersHorizontal, X } from "lucide-react";
 import type { Product } from "@/db/schema";
 import { ProductCard } from "@/components/product-card";
+import { MiniCart } from "@/components/store/mini-cart";
 import { PRICE_RANGES, SORT_OPTIONS, type SortId } from "@/lib/catalog";
 import { categoryLabel } from "@/lib/product-copy";
 import { cn } from "@/lib/format";
@@ -94,7 +95,7 @@ export function ShopBrowser({ items, total, page, pageCount, categories, brands,
   if (query.inStock) chips.push({key:"stock",label:"In stock",remove:() => navigate(next => {next.delete("stock");next.delete("page");})});
 
   return (
-    <div ref={resultsRef} className="shell scroll-mt-3 pb-6 sm:pb-9">
+    <div ref={resultsRef} className="pq shell scroll-mt-3 pb-24 sm:pb-10" data-cat={query.category ?? "default"}>
       <nav aria-label="Product categories" className="scrollbar-none mb-3 flex items-center gap-1.5 overflow-x-auto pb-1 sm:mb-4 sm:gap-2">
         <button type="button" onClick={() => selectCategory()} className={cn("category-chip chip min-h-9 shrink-0", !query.category && "chip-active")}>All</button>
         {categories.map(category => <button key={category.slug} data-tone={category.slug} type="button" onClick={() => selectCategory(category.slug)} aria-pressed={query.category === category.slug} className={cn("category-chip chip min-h-9 shrink-0", query.category === category.slug && "chip-active")}>{categoryLabel(category.slug, category.name)}</button>)}
@@ -111,13 +112,33 @@ export function ShopBrowser({ items, total, page, pageCount, categories, brands,
           {items.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-line bg-cream px-5 py-10 text-center"><PackageSearch size={28} className="mx-auto text-muted" /><h2 className="mt-3 text-lg">No matching products</h2><p className="mt-1 text-sm text-muted">Try another search or remove a filter.</p><button type="button" onClick={clearAll} className="btn btn-primary btn-sm mt-4 min-h-10">Reset filters</button></div>
           ) : (
-            <div className={cn("grid grid-cols-2 gap-2.5 transition-opacity sm:grid-cols-3 sm:gap-4 xl:grid-cols-4 2xl:grid-cols-5", pending && "pointer-events-none opacity-50")}>{items.map((product,index) => <ProductCard key={product.id} product={product} priority={index < 4} />)}</div>
+            <div className={cn("pq-grid grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-4 xl:grid-cols-4 2xl:grid-cols-5", pending && "pointer-events-none")} data-pending={pending || undefined}>
+              {pending
+                ? Array.from({ length: Math.min(8, Math.max(4, items.length)) }, (_, index) => <ProductCardSkeleton key={index} />)
+                : items.map((product, index) => <ProductCard key={product.id} product={product} priority={index < 4} />)}
+            </div>
           )}
           {pageCount > 1 && <nav aria-label="Pagination" className="mt-5 flex flex-wrap items-center justify-center gap-1.5"><button type="button" disabled={page <= 1 || pending} onClick={() => navigate(next => { next.set("page",String(Math.max(1,page-1))); },true)} aria-label="Previous page" className="pagination-pill disabled:opacity-35"><ArrowLeft size={15} /></button>{Array.from({length:pageCount},(_,index) => index+1).map(value => <button key={value} type="button" disabled={pending} aria-current={value === page ? "page" : undefined} onClick={() => navigate(next => { if (value===1) next.delete("page"); else next.set("page",String(value)); },true)} className={cn("pagination-pill text-xs font-semibold", value===page && "is-current")}>{value}</button>)}<button type="button" disabled={page>=pageCount || pending} onClick={() => navigate(next => {next.set("page",String(Math.min(pageCount,page+1)));},true)} aria-label="Next page" className="pagination-pill disabled:opacity-35"><ArrowRight size={15} /></button></nav>}
         </div>
       </div>
 
+      <MiniCart />
       {filtersOpen && <div className="fixed inset-0 z-[75] lg:hidden" role="dialog" aria-modal="true" aria-label="Filters"><button type="button" onClick={() => setFiltersOpen(false)} aria-label="Close filter backdrop" className="absolute inset-0 bg-ink/50 backdrop-blur-sm" /><div ref={filterRef} className="animate-slide-in-left absolute inset-y-0 left-0 flex h-dvh w-[min(90%,23rem)] flex-col bg-bone"><div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3"><h2 className="text-lg">Filters</h2><button type="button" onClick={() => setFiltersOpen(false)} aria-label="Close filters" className="grid size-10 place-items-center rounded-full border border-line"><X size={18} /></button></div><div className="min-h-0 flex-1 overflow-y-auto p-4">{filterBody}</div><div className="shrink-0 border-t border-line bg-cream p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"><button type="button" disabled={pending} onClick={() => setFiltersOpen(false)} className="btn btn-primary min-h-11 w-full">{pending ? <><Loader2 size={15} className="animate-spin" /> Updating…</> : <>Show {total} {total === 1 ? "product" : "products"} <ArrowRight size={14} /></>}</button></div></div></div>}
+    </div>
+  );
+}
+
+/** Layout-stable placeholder shown while a filter transition resolves. */
+function ProductCardSkeleton() {
+  return (
+    <div className="pq skeleton pq-skeleton" aria-hidden="true">
+      <div className="pq-skeleton-media pq-shimmer" />
+      <div className="pq-skeleton-body">
+        <div className="pq-skeleton-line pq-shimmer" data-w="40" />
+        <div className="pq-skeleton-line pq-shimmer" data-w="60" />
+        <div className="pq-skeleton-line pq-shimmer" data-w="40" />
+        <div className="pq-skeleton-line pq-shimmer" />
+      </div>
     </div>
   );
 }

@@ -660,3 +660,59 @@
     font-size: 16px !important;
   }
 }
+
+/* ==================================================================
+   Polish layer — motion, depth and micro-interactions across pages
+   ================================================================== */
+@layer base {
+  body {
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c9d2da; border-radius: 99px; border: 3px solid var(--color-bone); }
+  ::-webkit-scrollbar-thumb:hover { background: #a9b5c0; }
+}
+
+@layer components {
+  /* Product / offer cards lift and their imagery zooms gently. */
+  .product-card { transition: transform .25s ease, box-shadow .3s ease, border-color .25s ease; }
+  .product-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); border-color: #ccd5dd; }
+  .product-card img { transition: transform .7s cubic-bezier(.2, .7, .2, 1); will-change: transform; }
+  .product-card:hover img { transform: scale(1.06); }
+
+  /* Primary actions get a soft lift on hover (press-down already exists). */
+  .btn-primary:hover:not(:disabled), .btn-volt:hover:not(:disabled), .btn-buy:hover:not(:disabled) { transform: translateY(-1px); }
+  .btn { will-change: transform; }
+
+  /* Links ease their colour changes everywhere. */
+  a { transition-property: color, background-color, border-color, opacity, box-shadow; transition-duration: .16s; transition-timing-function: ease; }
+
+  /* Long-form legal / help pages read better with a touch more line height. */
+  .legal-body p, .prose p { line-height: 1.75; }
+}
+
+/* Detail refinements — storefront pages */
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; }
+  img { image-rendering: auto; }
+  input:focus-visible, textarea:focus-visible, select:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(201, 241, 107, .55);
+    border-color: var(--color-ink-mute);
+  }
+  button:not(:disabled), [role="button"], summary { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  h1, h2, h3 { text-wrap: balance; }
+  p { text-wrap: pretty; }
+}
+@media (hover: none) {
+  .product-card:hover { transform: none; box-shadow: none; }
+  .product-card:hover img { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .product-card, .product-card img, .btn { transition: none !important; transform: none !important; }
+}

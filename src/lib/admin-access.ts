@@ -91,6 +91,7 @@ export function roleHas(role: AdminRole | undefined, permission: Permission): bo
 /** Console sections and the permission required to open each. */
 export const SECTION_ACCESS: Record<string, Permission> = {
   overview: "dashboard.view",
+  analytics: "dashboard.view",
   orders: "orders.view",
   customers: "customers.view",
   catalogue: "catalogue.view",

@@ -10,6 +10,7 @@ import { StorefrontMain } from "@/components/storefront-main";
 import { ConsentBanner } from "@/components/consent-banner";
 import { WishlistProvider } from "@/lib/wishlist";
 import "./features.css";
+import "./product-system.css";
 
 export const metadata: Metadata = {
   title: {

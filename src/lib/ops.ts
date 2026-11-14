@@ -28,6 +28,11 @@ export type MerchantOrder = Omit<Order, "status" | "notes"> & {
   riskFlags: string[];
   otpVerified?: boolean;
   refundAmount?: number;
+  serials: string[];
+  trackingNumber?: string;
+  hold?: { on: boolean; reason?: string; at: string };
+  warranty?: { status: "open" | "resolved"; issue: string; openedAt: string; resolvedAt?: string };
+  fulfilledAt?: string;
 };
 
 export const STATUS_FLOW: OrderStatus[] = ["pending", "confirmed", "packing", "shipped", "delivered"];
@@ -113,6 +118,11 @@ export function decorateOrder(order: Order): MerchantOrder {
     riskFlags: flags,
     otpVerified: patch.otpVerified,
     refundAmount: patch.refundAmount,
+    serials: Array.isArray(patch.serials) ? patch.serials : [],
+    trackingNumber: patch.trackingNumber,
+    hold: patch.hold,
+    warranty: patch.warranty,
+    fulfilledAt: patch.fulfilledAt,
   };
 }
 
@@ -239,6 +249,158 @@ export function markRefunded(orderNumber: string, amount: number) {
   audit("Refunded order", orderNumber, formatBDT(amount));
   ops.patchOrder(orderNumber, { paymentStatus: "refunded", refundAmount: amount });
   return advanceStatus(orderNumber, "returned", `Refunded ${formatBDT(amount)}`);
+}
+
+/* ---------------------------------------------------------------- */
+/* Fulfilment traceability (serials, tracking, holds, warranty)      */
+/* ---------------------------------------------------------------- */
+
+/** Serial / batch numbers, trimmed, de-duplicated and capped. */
+export function setOrderSerials(orderNumber: string, serials: string[]) {
+  const clean = [...new Set(serials.map((value) => value.trim()).filter(Boolean))].slice(0, 40);
+  ops.patchOrder(orderNumber, { serials: clean });
+  audit("Updated serial numbers", orderNumber, `${clean.length} recorded`);
+  return findOrder(orderNumber);
+}
+
+export function setOrderTracking(orderNumber: string, trackingNumber: string) {
+  const clean = trackingNumber.trim().slice(0, 60);
+  const order = findOrder(orderNumber);
+  ops.patchOrder(orderNumber, {
+    trackingNumber: clean,
+    courier: clean
+      ? {
+          provider: order?.courier?.provider ?? ops.state.settings.courier.provider ?? "manual",
+          consignmentId: clean,
+          trackingUrl: order?.courier?.trackingUrl ?? "",
+          bookedAt: order?.courier?.bookedAt ?? new Date().toISOString(),
+        }
+      : order?.courier,
+  });
+  audit(clean ? "Added tracking number" : "Cleared tracking number", orderNumber, clean);
+  return findOrder(orderNumber);
+}
+
+export function setOrderHold(orderNumber: string, on: boolean, reason = "") {
+  ops.patchOrder(orderNumber, {
+    hold: on ? { on: true, reason: reason.trim().slice(0, 120) || "Held by staff", at: new Date().toISOString() } : { on: false, at: new Date().toISOString() },
+  });
+  audit(on ? "Put order on hold" : "Released order hold", orderNumber, reason);
+  return findOrder(orderNumber);
+}
+
+export function setOrderWarranty(orderNumber: string, action: "open" | "resolve", issue = "") {
+  const existing = findOrder(orderNumber)?.warranty;
+  ops.patchOrder(orderNumber, {
+    warranty: action === "open"
+      ? { status: "open", issue: issue.trim().slice(0, 160) || "Fault reported by customer", openedAt: new Date().toISOString() }
+      : { status: "resolved", issue: existing?.issue ?? "Fault reported by customer", openedAt: existing?.openedAt ?? new Date().toISOString(), resolvedAt: new Date().toISOString() },
+  });
+  audit(action === "open" ? "Opened warranty claim" : "Resolved warranty claim", orderNumber, issue);
+  return findOrder(orderNumber);
+}
+
+/* ---------------------------------------------------------------- */
+/* Customers                                                         */
+/* ---------------------------------------------------------------- */
+
+export type CustomerSegment = "vip" | "builder" | "wholesale" | "regular";
+
+export function customerSegment(phone: string, fallback: CustomerSegment): CustomerSegment {
+  return ops.state.customerSegments[phone.replace(/\D/g, "")] ?? fallback;
+}
+
+export function setCustomerSegment(phone: string, segment: CustomerSegment) {
+  const key = phone.replace(/\D/g, "");
+  const next = { ...ops.state.customerSegments };
+  if (segment === "regular") delete next[key];
+  else next[key] = segment;
+  ops.set({ customerSegments: next });
+  audit("Changed customer segment", key, segment);
+}
+
+/* ---------------------------------------------------------------- */
+/* Reviews                                                           */
+/* ---------------------------------------------------------------- */
+
+export function reviewMeta(key: string) {
+  return ops.state.reviewMeta[key] ?? {};
+}
+
+export function replyToReview(key: string, reply: string) {
+  const clean = reply.trim().slice(0, 400);
+  const meta = ops.state.reviewMeta[key] ?? {};
+  ops.set({
+    reviewMeta: {
+      ...ops.state.reviewMeta,
+      [key]: { ...meta, reply: clean || undefined, repliedAt: clean ? new Date().toISOString() : undefined },
+    },
+  });
+  audit(clean ? "Replied to review" : "Removed review reply", key);
+}
+
+export function flagReview(key: string, flagged: boolean, reason?: string) {
+  const meta = ops.state.reviewMeta[key] ?? {};
+  ops.set({
+    reviewMeta: {
+      ...ops.state.reviewMeta,
+      [key]: { ...meta, flagged, flaggedReason: flagged ? (reason ?? "Flagged for review") : undefined, flaggedAt: flagged ? new Date().toISOString() : undefined },
+    },
+  });
+  audit(flagged ? "Flagged review" : "Cleared review flag", key, reason);
+}
+
+/* ---------------------------------------------------------------- */
+/* Printable parcel label                                            */
+/* ---------------------------------------------------------------- */
+
+/** Opens a print-ready label (order, address, items, serials, tracking). */
+export function printOrderLabel(order: MerchantOrder) {
+  const rows = order.items
+    .map((item) => `<tr><td>${escapeHtml(item.name)}</td><td style="text-align:center">${item.qty}</td></tr>`)
+    .join("");
+  const serials = order.serials.length
+    ? `<p class="mono"><b>Serials / batch</b><br>${order.serials.map(escapeHtml).join(" · ")}</p>`
+    : "";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(order.orderNumber)} label</title>
+<style>
+  @page { size: 100mm 150mm; margin: 6mm; }
+  * { box-sizing: border-box; }
+  body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; color: #111; margin: 0; padding: 10px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -.02em; }
+  .muted { color: #555; font-size: 12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+  .box { border: 1px solid #111; border-radius: 6px; padding: 8px; margin-top: 8px; }
+  .big { font-size: 17px; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  td { padding: 3px 0; border-bottom: 1px dotted #bbb; }
+  .tag { display: inline-block; border: 1px solid #111; border-radius: 999px; padding: 1px 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+</style></head><body>
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <span class="big">Glowing Space BD</span><span class="tag">${escapeHtml(order.status)}</span>
+  </div>
+  <p class="muted" style="margin:2px 0 0">Parcel label · printed ${new Date().toLocaleString()}</p>
+  <div class="box"><span class="big">${escapeHtml(order.orderNumber)}</span><br>
+    <span class="mono">${order.items.reduce((n, i) => n + i.qty, 0)} units · ${escapeHtml(order.paymentMethod.toUpperCase())} · ${formatBDT(order.total)}</span>
+  </div>
+  <div class="box"><b>Deliver to</b><br><span class="big">${escapeHtml(order.customerName)}</span><br>
+    ${escapeHtml(order.address)}<br>${escapeHtml(order.district)}<br><span class="mono">${escapeHtml(order.phone)}</span>
+  </div>
+  <div class="box"><table><tbody>${rows}</tbody></table>${serials}
+    ${order.trackingNumber ? `<p class="mono"><b>Tracking</b> ${escapeHtml(order.trackingNumber)}</p>` : ""}
+  </div>
+  <p class="muted" style="margin-top:8px">Check serials against the packing bench before sealing.</p>
+  <script>window.onload = () => { window.print(); };</script>
+</body></html>`;
+  const win = window.open("", "_blank", "width=420,height=640");
+  if (!win) return false;
+  win.document.write(html);
+  win.document.close();
+  return true;
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] ?? char));
 }
 
 export function bulkStatus(orderNumbers: string[], status: OrderStatus): number {
